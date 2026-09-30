@@ -12,7 +12,7 @@
 | 文件 | 说明 |
 | --- | --- |
 | `sensenova.models.json` | chat 层配置片段，合并进 pi 的 `models.json` |
-| `sensenova-images.mjs` | 生图扩展（U1.5 Lite / Fast），注册 provider `sensenova-images` |
+| `sensenova-images.ts` | 生图扩展（U1.5 Lite / Fast）：注册 provider `sensenova-images`，并注册对话内工具 `sensenova_generate_image` |
 | `sensenova-images.test.mjs` | 主 seam 单元测试（请求构造 / 响应映射 / 错误路径） |
 | 本 README | 安装、认证、常量与验证说明 |
 
@@ -24,11 +24,20 @@
 ## 安装
 
 1. **合并配置**：把 `sensenova.models.json` 中 `providers.sensenova` 合入 `~/.pi/agent/models.json`（若文件不存在则复制整文件）。
-2. **安装扩展**：复制 `sensenova-images.mjs` 到 `~/.pi/agent/extensions/`。
+2. **安装扩展**：复制 `sensenova-images.ts` 到 `~/.pi/agent/extensions/`（pi 扩展自动发现只认 `.ts`/`.js` 文件）。若旧版 `sensenova-u1.ts` 仍在，删除它（旧工具 `sensenova_draw_infographic` 已废弃：模型 id `sensenova-u1-fast` 早已下线，返回 1 小时过期 URL 且不落盘）。
 3. **认证**（二选一）：
    - `/login`：先后录入两个 provider 的密钥——`SenseNova`（chat）与 `SenseNova Images`（生图），同一个 key 即可；
    - 或设环境变量 `SENSENOVA_API_KEY`（两 provider 共用）。
-4. **重载** `/model`：应出现 `SenseNova` 下 5 个 chat 模型、`SenseNova Images` 下 2 个生图模型。模型不出现时先确认对应 provider 的凭据已配置。
+4. **重载** `/model`：应出现 `SenseNova` 下 5 个 chat 模型、`SenseNova Images` 下 2 个生图模型。模型不出现时先确认对应 provider 的凭据已配置。新扩展/新工具需要重启 pi 或 `/reload` 后生效。
+
+## 对话内生图
+
+扩展注册对话内工具 **`sensenova_generate_image`**：agent 在对话中直接调用即可生图（如「画一张架构图」），无需切换模型或手动调接口。
+
+- 参数：`prompt`（必填，图片描述）；`model`（可选，`sensenova-u1.5-fast` 默认、`sensenova-u1.5-lite` 更高画质）。
+- 产物：PNG 写入 `<cwd>/.sensenova/`，文件名 `时间戳-描述slug.png`；工具返回本地路径（不用会过期的 URL）。
+- 凭据：与 provider 共用 `SenseNova Images` 的 `/login` 密钥或 `$SENSENOVA_API_KEY`；缺凭据时工具返回错误提示并说明配置方法。
+- 常量沿用下表（`watermark:false`、`output_format:"png"`、`size:"auto"`、`response_format:"b64_json"`、`n=1`）。
 
 ## 生图常量与官方可调字段
 
@@ -41,7 +50,7 @@
 | `size` | `"auto"` | 官方常量需 32 倍数、512–4096、比例 ≤3:1；`auto` 时 edits 自动适配主图 |
 | `response_format` | `"b64_json"` | 官方 `b64_json` / `url`（`url` 链接 24 小时过期，故用 `b64_json` 直传） |
 
-官方可调但本期不改：`prompt_extend`（默认 `true`，prompt 自动润色）、`n`（仅 `1`）、参考图（`/v1/images/edits` 必带 ≥1 张、至多 5 张）。改这些字段 = 改 `sensenova-images.mjs` 常量。
+官方可调但本期不改：`prompt_extend`（默认 `true`，prompt 自动润色）、`n`（仅 `1`）、参考图（`/v1/images/edits` 必带 ≥1 张、至多 5 张）。改这些字段 = 改 `sensenova-images.ts` 常量。
 
 ## chat 模型要点
 
@@ -62,7 +71,7 @@ node --test sensenova-images.test.mjs
 - 已对齐：pi 0.99.1 打包产物（models.json schema、openai-completions 实现、provider 合成）与官方快照（ADR 0001）。
 - **已冒烟（2026-09-30，deepseek-flash 优先、后全矩阵）**：5 个 chat 模型 × 全部思考档位 wire 级验证通过——`reasoning_effort` 档位映射、`max_tokens`/`max_completion_tokens` 字段、`role:"system"`（supportsDeveloperRole:false）、无 `store` 字段（supportsStore:false）、usage/缓存映射、工具调用多轮回传（read 工具）均验证。详见 ADR 0001「档位实测修正」。
 - **结构历史验证（同日）**：多 system 消息 → 折叠为单条（无 400）；`assistant. content:null` 无工具 → 从请求跳过；带思考的 assistant 历史 → 按原 wire 字段名（`reasoning_content`）回传；跨请求工具历史（`tool_calls→tool→toolResult`）完整回传。
-- 待验证：生图链路（U1.5），需 `sensenova-images` 凭据后在 TUI 中触发生图。
+- 待验证：生图链路（U1.5）实发请求——对话内入口已就绪（`sensenova_generate_image`），需 `sensenova-images` 凭据后在 TUI 中触发生图。
 
 ## 已知待实测项
 

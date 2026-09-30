@@ -1,3 +1,6 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
 const SENSENOVA_BASE_URL = "https://token.sensenova.cn/v1";
 
 const IMAGE_CONSTANTS = {
@@ -9,6 +12,14 @@ const IMAGE_CONSTANTS = {
 };
 
 const ERROR_PREFIX = "SenseNova Images: ";
+
+const PROVIDER_ID = "sensenova-images";
+const DEFAULT_MODEL = "sensenova-u1.5-fast";
+const IMAGE_MODELS = [
+	{ id: "sensenova-u1.5-lite", name: "SenseNova U1.5 Lite" },
+	{ id: DEFAULT_MODEL, name: "SenseNova U1.5 Fast" },
+];
+const IMAGE_DIR_NAME = ".sensenova";
 
 export function generateImages(model, context, options = {}) {
 	// Provider contract: never reject; fold failures into the returned result.
@@ -104,11 +115,109 @@ function imageModel(id, name) {
 	};
 }
 
+function slugify(prompt) {
+	const slug = prompt
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 40);
+	return slug || "image";
+}
+
+function formatTimestamp(date) {
+	const pad = (n) => String(n).padStart(2, "0");
+	return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}-${String(date.getMilliseconds()).padStart(3, "0")}`;
+}
+
+async function saveImageFile(cwd, prompt, image, now) {
+	const dir = join(cwd, IMAGE_DIR_NAME);
+	const fileName = `${formatTimestamp(now)}-${slugify(prompt)}.${IMAGE_CONSTANTS.output_format}`;
+	const filePath = join(dir, fileName);
+	await mkdir(dir, { recursive: true });
+	await writeFile(filePath, Buffer.from(image.data, "base64"));
+	return filePath;
+}
+
+function toolError(message) {
+	const text = message.startsWith(ERROR_PREFIX) ? message : `${ERROR_PREFIX}${message}`;
+	return { content: [{ type: "text", text }], isError: true };
+}
+
+/** Conversation entry point for image generation; also the test seam for the tool. */
+export function createGenerateImageTool(options = {}) {
+	return {
+		name: "sensenova_generate_image",
+		label: "SenseNova Image Generator",
+		description:
+			"Generate an image from a text prompt with the SenseNova U1.5 model and save it as a PNG. Returns the path of the saved image. Use model \"sensenova-u1.5-lite\" for higher quality or \"sensenova-u1.5-fast\" (default) for quicker results.",
+		promptSnippet: "Generate an image from a text prompt (SenseNova U1.5)",
+		parameters: {
+			type: "object",
+			properties: {
+				prompt: {
+					type: "string",
+					description:
+						"Detailed text description of the image to generate: subject, style, composition, and mood.",
+				},
+				model: {
+					type: "string",
+					enum: IMAGE_MODELS.map((m) => m.id),
+					default: DEFAULT_MODEL,
+					description: "U-series model: sensenova-u1.5-fast (default, quicker) or sensenova-u1.5-lite (higher quality).",
+				},
+			},
+			required: ["prompt"],
+		},
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			const modelId = params.model ?? DEFAULT_MODEL;
+			if (typeof params.prompt !== "string" || params.prompt.trim().length === 0) {
+				return toolError("a text prompt is required");
+			}
+			const model = ctx.modelRegistry.getModelOfType("image", PROVIDER_ID, modelId);
+			if (!model) {
+				return toolError(`image model "${modelId}" is not in the catalog`);
+			}
+			const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+			if (!auth.ok || !auth.apiKey) {
+				return toolError(
+					`no API key for provider "${PROVIDER_ID}"; run /login and choose \"SenseNova Images\", or set $SENSENOVA_API_KEY`,
+				);
+			}
+			const result = await generateImages(
+				model,
+				{ input: [{ type: "text", text: params.prompt }] },
+				{ apiKey: auth.apiKey, signal, fetch: options.fetch },
+			);
+			if (result.stopReason === "aborted") {
+				return toolError("image generation aborted");
+			}
+			if (result.stopReason === "error" && result.errorMessage) {
+				return toolError(result.errorMessage);
+			}
+			const image = result.output[0];
+			if (!image || image.type !== "image") {
+				return toolError("image generation returned no image data");
+			}
+			let filePath;
+			try {
+				filePath = await saveImageFile(ctx.cwd, params.prompt, image, options.now ? options.now() : new Date());
+			} catch (error) {
+				return toolError(`failed to save image: ${error instanceof Error ? error.message : String(error)}`);
+			}
+			return {
+				content: [{ type: "text", text: `Image generated and saved to ${filePath}` }],
+				details: { model: modelId, path: filePath },
+			};
+		},
+	};
+}
+
 export default function (pi) {
-	pi.registerProvider("sensenova-images", {
+	pi.registerProvider(PROVIDER_ID, {
 		name: "SenseNova Images",
 		apiKey: "$SENSENOVA_API_KEY",
-		models: [imageModel("sensenova-u1.5-lite", "SenseNova U1.5 Lite"), imageModel("sensenova-u1.5-fast", "SenseNova U1.5 Fast")],
+		models: IMAGE_MODELS.map(({ id, name }) => imageModel(id, name)),
 		images: { "sensenova-images": { generateImages } },
 	});
+	pi.registerTool(createGenerateImageTool());
 }

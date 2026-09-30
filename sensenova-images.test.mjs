@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { generateImages } from "./sensenova-images.ts";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createGenerateImageTool, generateImages } from "./sensenova-images.ts";
 
 const BASE_URL = "https://token.sensenova.cn/v1";
 
@@ -116,9 +119,7 @@ test("non-2xx response becomes an error result with a readable message", async (
 });
 
 test("aborted signal becomes an aborted result", async () => {
-	const abortError = new Error("The operation was aborted");
-	abortError.name = "AbortError";
-	const { impl } = fetchRecorder(null, { throwOnCall: abortError });
+	const { impl } = fetchRecorder(null, { throwOnCall: abortException() });
 	const signal = AbortSignal.abort();
 	const result = await generateImages(
 		makeModel(),
@@ -145,4 +146,138 @@ test("missing prompt becomes an error result without a network call", async () =
 	assert.equal(result.stopReason, "error");
 	assert.match(result.errorMessage, /prompt/);
 	assert.equal(calls.length, 0);
+});
+
+// --- sensenova_generate_image tool ---
+
+const NOW = new Date(2026, 8, 30, 10, 15, 30);
+
+function abortException() {
+	const error = new Error("The operation was aborted");
+	error.name = "AbortError";
+	return error;
+}
+
+function toolContext({ model = makeModel("sensenova-u1.5-fast"), apiKey = "sk-test", cwd }) {
+	return {
+		cwd,
+		modelRegistry: {
+			getModelOfType: (_type, _provider, modelId) => (model && model.id === modelId ? model : undefined),
+			getApiKeyAndHeaders: async () => (apiKey ? { ok: true, apiKey } : { ok: false, error: "No API key found" }),
+		},
+	};
+}
+
+async function withTempCwd(run) {
+	const cwd = await mkdtemp(join(tmpdir(), "sensenova-test-"));
+	try {
+		return await run(cwd);
+	} finally {
+		await rm(cwd, { recursive: true, force: true });
+	}
+}
+
+function makeTool(impl) {
+	return createGenerateImageTool({ fetch: impl, now: () => NOW });
+}
+
+test("tool generates with the default model and saves the PNG under .sensenova/", async () => {
+	const { calls, impl } = fetchRecorder(okResponse());
+	const tool = makeTool(impl);
+	await withTempCwd(async (cwd) => {
+		const result = await tool.execute("call-1", { prompt: "a white seal" }, undefined, undefined, toolContext({ cwd }));
+
+		assert.equal(result.isError, undefined);
+		assert.equal(result.details.model, "sensenova-u1.5-fast");
+		const expectedPath = join(cwd, ".sensenova", "20260930-101530-000-a-white-seal.png");
+		assert.equal(result.details.path, expectedPath);
+		assert.equal(result.content[0].text, `Image generated and saved to ${expectedPath}`);
+
+		const written = await readFile(expectedPath);
+		assert.deepEqual(written, Buffer.from("iVBORw0KGgo=", "base64"));
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0].url, `${BASE_URL}/images/generations`);
+		const body = JSON.parse(calls[0].init.body);
+		assert.equal(body.model, "sensenova-u1.5-fast");
+		assert.equal(body.prompt, "a white seal");
+		assert.equal(calls[0].init.headers.Authorization, "Bearer sk-test");
+	});
+});
+
+test("tool honors an explicit model parameter", async () => {
+	const { calls, impl } = fetchRecorder(okResponse());
+	const tool = makeTool(impl);
+	await withTempCwd(async (cwd) => {
+		const result = await tool.execute(
+			"call-1",
+			{ prompt: "a white seal", model: "sensenova-u1.5-lite" },
+			undefined,
+			undefined,
+			toolContext({ cwd, model: makeModel("sensenova-u1.5-lite") }),
+		);
+
+		assert.equal(result.details.model, "sensenova-u1.5-lite");
+		const body = JSON.parse(calls[0].init.body);
+		assert.equal(body.model, "sensenova-u1.5-lite");
+	});
+});
+
+test("tool filenames slug the prompt and fall back to image for non-ASCII prompts", async () => {
+	const { impl } = fetchRecorder(okResponse());
+	const tool = makeTool(impl);
+	await withTempCwd(async (cwd) => {
+		const ascii = await tool.execute("call-1", { prompt: "A 白 seal, Arch!" }, undefined, undefined, toolContext({ cwd }));
+		assert.equal(ascii.details.path, join(cwd, ".sensenova", "20260930-101530-000-a-seal-arch.png"));
+
+		const chinese = await tool.execute("call-2", { prompt: "一只白色海豹" }, undefined, undefined, toolContext({ cwd }));
+		assert.equal(chinese.details.path, join(cwd, ".sensenova", "20260930-101530-000-image.png"));
+	});
+});
+
+test("tool reports a missing API key without calling the network", async () => {
+	const { calls, impl } = fetchRecorder(okResponse());
+	const tool = makeTool(impl);
+	await withTempCwd(async (cwd) => {
+		const result = await tool.execute("call-1", { prompt: "a white seal" }, undefined, undefined, toolContext({ cwd, apiKey: null }));
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0].text, /API key/);
+		assert.equal(calls.length, 0);
+	});
+});
+
+test("tool reports a missing catalog model without calling the network", async () => {
+	const { calls, impl } = fetchRecorder(okResponse());
+	const tool = makeTool(impl);
+	await withTempCwd(async (cwd) => {
+		const result = await tool.execute("call-1", { prompt: "a white seal" }, undefined, undefined, toolContext({ cwd, model: null }));
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0].text, /catalog/);
+		assert.equal(calls.length, 0);
+	});
+});
+
+test("tool surfaces a provider error and does not write a file", async () => {
+	const { calls, impl } = fetchRecorder({ error: { message: "invalid prompt" } }, { status: 400 });
+	const tool = makeTool(impl);
+	await withTempCwd(async (cwd) => {
+		const result = await tool.execute("call-1", { prompt: "x" }, undefined, undefined, toolContext({ cwd }));
+
+		assert.equal(result.isError, true);
+		assert.equal(result.content[0].text, "SenseNova Images: HTTP 400 invalid prompt");
+		assert.equal(calls.length, 1);
+		assert.equal(result.details, undefined);
+	});
+});
+
+test("tool reports an aborted generation as an error result", async () => {
+	const { impl } = fetchRecorder(null, { throwOnCall: abortException() });
+	const tool = makeTool(impl);
+	await withTempCwd(async (cwd) => {
+		const result = await tool.execute("call-1", { prompt: "a white seal" }, AbortSignal.abort(), undefined, toolContext({ cwd }));
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0].text, /aborted/i);
+	});
 });
