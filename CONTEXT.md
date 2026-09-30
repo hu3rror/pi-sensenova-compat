@@ -41,8 +41,24 @@ _Avoid_: 思考留档
 _Avoid_: 官方映射表（口语）
 
 **生图常量**:
-`watermark:false`、`output_format:"png"`、`size:"auto"`、`response_format:"b64_json"`。本期硬编码，README 保留官方默认与可调字段说明。
+`watermark:false`、`output_format:"png"`、`size:"auto"`、`response_format:"b64_json"`。硬编码默认值，可被「命令配置」覆盖（见「覆盖优先级」）。README 保留官方默认与可调字段说明。
 _Avoid_: 默认水印（指 `watermark:true`）
+
+**图片命令（sensenova-image 命令）**:
+`/sensenova-image` 命令：用户直达生图通道，不经模型决策。子命令 `gen`（文生图）/ `edit`（图生图）/ `settings`（管理「命令配置」）。与「工具」（`sensenova_generate_image`，agent 编排入口）共享同一核心，是两个入口而非两个实现。
+_Avoid_: 命令工具（把两入口混为一谈）
+
+**命令配置（sensenova-compat.json）**:
+用户级配置文件（agent 目录下 `extensions/sensenova-compat.json`），覆盖「生图常量」默认值，键为 `model` / `size` / `output_format` / `watermark` / `output_dir`；同时作用于命令与工具两个入口。
+_Avoid_: 扩展配置（与 pi 自身 settings 混淆）、配置文件（太泛）
+
+**覆盖优先级**:
+显式参数（命令 `--model` flag）> 命令配置 > 生图常量。
+_Avoid_: 优先级（太泛）
+
+**图生图路径引用**:
+`edit` 子命令中以 `@` 前缀 token 引用本地图片路径（触发 pi 内置文件补全），解析时剥 `@`；至多 5 张。
+_Avoid_: @ 语法（口语可）
 
 **发布流**:
 push `v*` tag 触发 `.github/workflows/publish.yml`（Trusted Publisher / OIDC，零 token），暂存流——CI 只 `npm stage publish`，维护者本地 `npm stage approve <stage-id>`（需 2FA）真正发布；回滚 `npm stage reject`。首发（包尚未存在于 registry）由维护者本地 `npm publish` 后绑定 Trusted Publisher，CI 自下一版本启用。

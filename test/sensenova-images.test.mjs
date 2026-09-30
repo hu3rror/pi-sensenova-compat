@@ -1,60 +1,32 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import {
+	abortException,
+	BASE_URL,
+	fetchRecorder,
+	makeModel,
+	okResponse,
+	TINY_GIF,
+	TINY_JPEG,
+	TINY_PNG,
+	TINY_WEBP,
+	withTempCwd,
+} from "./helpers.mjs";
 import { createGenerateImageTool, generateImages, readImageBlocks } from "../extensions/sensenova-images.ts";
-
-const BASE_URL = "https://token.sensenova.cn/v1";
-
-function makeModel(id = "sensenova-u1.5-lite") {
-	return {
-		provider: "sensenova-images",
-		api: "sensenova-images",
-		id,
-		name: id,
-		baseUrl: BASE_URL,
-		output: ["image"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	};
-}
-
-function fetchRecorder(response, { status = 200, throwOnCall = null } = {}) {
-	const calls = [];
-	const impl = async (url, init = {}) => {
-		calls.push({ url, init });
-		if (throwOnCall) throw throwOnCall;
-		return { ok: status >= 200 && status < 300, status, json: async () => response };
-	};
-	return { calls, impl };
-}
-
-function okResponse(payload = {}) {
-	return {
-		created: 1788849614,
-		data: [{ b64_json: "iVBORw0KGgo=" }],
-		output_format: "png",
-		size: "2048x2048",
-		usage: { input_tokens: 1540, output_tokens: 4096, total_tokens: 5636, images_count: 1 },
-		...payload,
-	};
-}
 
 function imageBlock(mimeType = "image/png", data = "AAAA") {
 	return { type: "image", mimeType, data };
 }
 
-const TINY_PNG = Buffer.from(
-	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-	"base64",
-);
-const TINY_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
-const TINY_WEBP = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBP"), Buffer.alloc(8)]);
-const TINY_GIF = Buffer.from("GIF89a".padEnd(16, "\0"));
-
 test("text-only input posts to /images/generations with the agreed constants", async () => {
 	const { calls, impl } = fetchRecorder(okResponse());
-	const result = await generateImages(makeModel(), { input: [{ type: "text", text: "a white seal" }] }, { apiKey: "sk-test", fetch: impl });
+	const result = await generateImages(
+		makeModel("sensenova-u1.5-lite"),
+		{ input: [{ type: "text", text: "a white seal" }] },
+		{ apiKey: "sk-test", fetch: impl },
+	);
 
 	assert.equal(calls.length, 1);
 	assert.equal(calls[0].url, `${BASE_URL}/images/generations`);
@@ -98,7 +70,7 @@ test("image input posts to /images/edits with reference images as base64 data UR
 test("b64_json response maps to an image output block with usage and zero cost", async () => {
 	const { impl } = fetchRecorder(okResponse());
 	const result = await generateImages(
-		makeModel(),
+		makeModel("sensenova-u1.5-lite"),
 		{ input: [{ type: "text", text: "a white seal" }] },
 		{ apiKey: "sk-test", fetch: impl },
 	);
@@ -160,12 +132,6 @@ test("missing prompt becomes an error result without a network call", async () =
 
 const NOW = new Date(2026, 8, 30, 10, 15, 30);
 
-function abortException() {
-	const error = new Error("The operation was aborted");
-	error.name = "AbortError";
-	return error;
-}
-
 function toolContext({ model = makeModel("sensenova-u1.5-fast"), apiKey = "sk-test", cwd }) {
 	return {
 		cwd,
@@ -176,23 +142,14 @@ function toolContext({ model = makeModel("sensenova-u1.5-fast"), apiKey = "sk-te
 	};
 }
 
-async function withTempCwd(run) {
-	const cwd = await mkdtemp(join(tmpdir(), "sensenova-test-"));
-	try {
-		return await run(cwd);
-	} finally {
-		await rm(cwd, { recursive: true, force: true });
-	}
-}
-
-function makeTool(impl) {
-	return createGenerateImageTool({ fetch: impl, now: () => NOW });
+function makeTool(impl, configPath) {
+	return createGenerateImageTool({ fetch: impl, now: () => NOW, configPath });
 }
 
 test("tool generates with the default model and saves the PNG under .sensenova/", async () => {
 	const { calls, impl } = fetchRecorder(okResponse());
-	const tool = makeTool(impl);
 	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
 		const result = await tool.execute("call-1", { prompt: "a white seal" }, undefined, undefined, toolContext({ cwd }));
 
 		assert.equal(result.isError, undefined);
@@ -214,8 +171,8 @@ test("tool generates with the default model and saves the PNG under .sensenova/"
 
 test("tool honors an explicit model parameter", async () => {
 	const { calls, impl } = fetchRecorder(okResponse());
-	const tool = makeTool(impl);
 	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
 		const result = await tool.execute(
 			"call-1",
 			{ prompt: "a white seal", model: "sensenova-u1.5-lite" },
@@ -232,8 +189,8 @@ test("tool honors an explicit model parameter", async () => {
 
 test("tool filenames slug the prompt and fall back to image for non-ASCII prompts", async () => {
 	const { impl } = fetchRecorder(okResponse());
-	const tool = makeTool(impl);
 	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
 		const ascii = await tool.execute("call-1", { prompt: "A 白 seal, Arch!" }, undefined, undefined, toolContext({ cwd }));
 		assert.equal(ascii.details.path, join(cwd, ".sensenova", "20260930-101530-000-a-seal-arch.png"));
 
@@ -244,8 +201,8 @@ test("tool filenames slug the prompt and fall back to image for non-ASCII prompt
 
 test("tool reports a missing API key without calling the network", async () => {
 	const { calls, impl } = fetchRecorder(okResponse());
-	const tool = makeTool(impl);
 	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
 		const result = await tool.execute("call-1", { prompt: "a white seal" }, undefined, undefined, toolContext({ cwd, apiKey: null }));
 
 		assert.equal(result.isError, true);
@@ -256,8 +213,8 @@ test("tool reports a missing API key without calling the network", async () => {
 
 test("tool reports a missing catalog model without calling the network", async () => {
 	const { calls, impl } = fetchRecorder(okResponse());
-	const tool = makeTool(impl);
 	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
 		const result = await tool.execute("call-1", { prompt: "a white seal" }, undefined, undefined, toolContext({ cwd, model: null }));
 
 		assert.equal(result.isError, true);
@@ -268,8 +225,8 @@ test("tool reports a missing catalog model without calling the network", async (
 
 test("tool surfaces a provider error and does not write a file", async () => {
 	const { calls, impl } = fetchRecorder({ error: { message: "invalid prompt" } }, { status: 400 });
-	const tool = makeTool(impl);
 	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
 		const result = await tool.execute("call-1", { prompt: "x" }, undefined, undefined, toolContext({ cwd }));
 
 		assert.equal(result.isError, true);
@@ -281,8 +238,8 @@ test("tool surfaces a provider error and does not write a file", async () => {
 
 test("tool reports an aborted generation as an error result", async () => {
 	const { impl } = fetchRecorder(null, { throwOnCall: abortException() });
-	const tool = makeTool(impl);
 	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
 		const result = await tool.execute("call-1", { prompt: "a white seal" }, AbortSignal.abort(), undefined, toolContext({ cwd }));
 
 		assert.equal(result.isError, true);
@@ -332,8 +289,8 @@ test("readImageBlocks maps file bytes to mime types and base64 data", async () =
 
 test("tool edits reference images via /images/edits and reports the saved path", async () => {
 	const { calls, impl } = fetchRecorder(okResponse());
-	const tool = makeTool(impl);
 	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
 		await writeFile(join(cwd, "main.png"), TINY_PNG);
 		await writeFile(join(cwd, "ref.jpg"), TINY_JPEG);
 		const result = await tool.execute(
@@ -362,8 +319,8 @@ test("tool edits reference images via /images/edits and reports the saved path",
 
 test("tool rejects more than 5 image_paths without a network call", async () => {
 	const { calls, impl } = fetchRecorder(okResponse());
-	const tool = makeTool(impl);
 	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
 		const result = await tool.execute(
 			"call-1",
 			{ prompt: "x", image_paths: ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"] },
@@ -380,8 +337,8 @@ test("tool rejects more than 5 image_paths without a network call", async () => 
 
 test("tool rejects malformed image_paths without a network call", async () => {
 	const { calls, impl } = fetchRecorder(okResponse());
-	const tool = makeTool(impl);
 	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
 		const nonArray = await tool.execute("call-1", { prompt: "x", image_paths: "main.png" }, undefined, undefined, toolContext({ cwd }));
 		const emptyEntry = await tool.execute("call-1", { prompt: "x", image_paths: [""] }, undefined, undefined, toolContext({ cwd }));
 
@@ -395,8 +352,8 @@ test("tool rejects malformed image_paths without a network call", async () => {
 
 test("tool reports a missing image file without a network call", async () => {
 	const { calls, impl } = fetchRecorder(okResponse());
-	const tool = makeTool(impl);
 	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
 		const result = await tool.execute(
 			"call-1",
 			{ prompt: "x", image_paths: ["missing.png"] },
@@ -413,8 +370,8 @@ test("tool reports a missing image file without a network call", async () => {
 
 test("tool reports a non-image file without a network call", async () => {
 	const { calls, impl } = fetchRecorder(okResponse());
-	const tool = makeTool(impl);
 	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
 		await writeFile(join(cwd, "notes.txt"), "not an image");
 		// A RIFF container that is not WEBP must not pass the webp sniff.
 		await writeFile(

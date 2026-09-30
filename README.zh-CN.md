@@ -39,6 +39,28 @@ chat 思考档位注意：官方文档对 `sensenova-6.8-flash-lite` / `deepseek
 3. **认证**（二选一）：`/login` 两次录入同一个 key（`SenseNova` + `SenseNova Images`），或设 `SENSENOVA_API_KEY`（两 provider 共用）。
 4. **重载** `/model` 并验证。新扩展/新工具需重启 pi 或 `/reload` 后生效。
 
+## 斜杠命令
+
+扩展同时注册 **`/sensenova-image`** 命令——确定性直通通道，不经 agent 决策（上面的对话内工具保留给 agent 编排生图；两者共享同一核心）。
+
+- `gen "<prompt>"`——文生图（等同省略 `image_paths`）。
+- `edit @a.png @b.png "<prompt>"`——图生图：至多 5 个 `@` 前缀路径，第 1 张为主编辑图；不带 `@` 的已存在图片文件同样算路径。输入 `@` 后 Tab 即用 pi 内置模糊文件补全。
+- `settings`——显示当前生效默认值与配置文件路径；`settings <key> <value>`——校验并持久化；`settings reset`——清空配置。
+- `--model sensenova-u1.5-lite`——单次调用的临时覆盖（任意位置）。
+- 优先级：显式 `--model` flag > 配置文件 > 硬编码常量。命令结果不写入 transcript。
+
+保存的默认值在 `~/.pi/agent/extensions/sensenova-compat.json`（agent 目录遵循 `PI_CODING_AGENT_DIR`），键：
+
+| 键 | 取值 |
+| --- | --- |
+| `model` | `sensenova-u1.5-fast`（默认）/ `sensenova-u1.5-lite` |
+| `size` | `auto`（默认）或 `WxH`，32 的倍数、512–4096、比例 ≤3:1 |
+| `output_format` | `png`（默认）/ `jpeg` / `webp` |
+| `watermark` | `true` / `false`（默认） |
+| `output_dir` | 相对 cwd（默认 `.sensenova`）或绝对路径 |
+
+这些同样作用于对话内工具。配置文件不含凭据（认证仍走 `/login` 或 `$SENSENOVA_API_KEY`）。
+
 ## 对话内生图
 
 扩展注册对话内工具 **`sensenova_generate_image`**，对话里直接调用即可生图（如「画一张架构图」），无需切换模型或手动调接口。
@@ -61,7 +83,8 @@ pi-sensenova-compat/
 ├── extensions/
 │   └── sensenova-images.ts         # 扩展层：provider + 工具，单文件
 ├── test/
-│   └── sensenova-images.test.mjs   # 主 seam 单元测试
+│   ├── sensenova-images.test.mjs   # 主 seam 单元测试（工具 + 核心）
+│   └── sensenova-command.test.mjs  # 命令/配置单元测试
 ├── sensenova.models.json           # chat 层配置片段（手动合并，非包资源）
 ├── docs/                           # ADR / 官方快照
 └── README.md / README.zh-CN.md
@@ -76,7 +99,7 @@ pi-sensenova-compat/
 | `size` | `"auto"` | 显式常量需 32 的倍数、512–4096、比例 ≤3:1；`auto` 时 edits 自动适配主图 |
 | `response_format` | `"b64_json"` | `b64_json` / `url`（`url` 链接 24 小时过期，故用 `b64_json` 直传） |
 
-官方可调但本期不改：`prompt_extend`（默认 `true`，自动润色 prompt）、`n`（仅 `1`）、参考图（`/v1/images/edits` 必带 ≥1 张、至多 5 张）。改这些字段 = 改 `extensions/sensenova-images.ts` 常量。
+以上是**默认值**；`watermark` / `output_format` / `size` 可经 `settings` 按用户覆盖（见[斜杠命令](#斜杠命令)），`model` / `output_dir` 同理。官方可调但本期不改：`prompt_extend`（默认 `true`，自动润色 prompt）、`n`（仅 `1`）、参考图（`/v1/images/edits` 必带 ≥1 张、至多 5 张）。改这些字段 = 改 `extensions/sensenova-images.ts` 常量。
 
 ## 测试
 
@@ -88,7 +111,7 @@ npm test
 
 ## 文档
 
-- 架构与取舍：`docs/adr/0001-sensenova-integration-architecture.md`、`docs/adr/0002-pi-package-layout.md`
+- 架构与取舍：`docs/adr/0001-sensenova-integration-architecture.md`、`docs/adr/0002-pi-package-layout.md`、`docs/adr/0003-sensenova-image-command-and-config.md`
 - 域术语：`CONTEXT.md`
-- 规格：GitHub issue #1
+- 规格：GitHub issue #1、#2
 - 官方文档快照：`docs/LLM API 服务平台.md`

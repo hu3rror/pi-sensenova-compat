@@ -39,6 +39,28 @@ Thinking-level note: the official doc's table for `sensenova-6.8-flash-lite` / `
 3. **Authenticate** (either): `/login` for both providers with the same key, or set `SENSENOVA_API_KEY` (shared).
 4. **Reload** `/model` and verify. New extensions/tools require a pi restart or `/reload`.
 
+## Slash command
+
+The extension also registers the **`/sensenova-image`** command — a deterministic, direct channel that skips the agent round-trip (the chat tool above stays for agent-orchestrated generation; both share the same core).
+
+- `gen "<prompt>"` — text-to-image (same as omitting `image_paths`).
+- `edit @a.png @b.png "<prompt>"` — image-to-image: up to 5 `@`-prefixed paths, first is the main edit target; existing image files without `@` also count as paths. Type `@` and Tab for pi's built-in fuzzy file completion.
+- `settings` — show the current effective defaults and the config file path; `settings <key> <value>` — validate and persist; `settings reset` — clear the file.
+- `--model sensenova-u1.5-lite` — one-off override for that call (any position).
+- Precedence: explicit `--model` flag > config file > hardcoded constants. Command results are not written to the transcript.
+
+Saved defaults live in `~/.pi/agent/extensions/sensenova-compat.json` (agent dir honors `PI_CODING_AGENT_DIR`), keys:
+
+| Key | Values |
+| --- | --- |
+| `model` | `sensenova-u1.5-fast` (default) / `sensenova-u1.5-lite` |
+| `size` | `auto` (default) or `WxH`, multiples of 32, 512–4096, ratio ≤3:1 |
+| `output_format` | `png` (default) / `jpeg` / `webp` |
+| `watermark` | `true` / `false` (default) |
+| `output_dir` | relative to cwd (default `.sensenova`) or absolute |
+
+They apply to the chat tool as well. The file never holds credentials (auth stays on `/login` or `$SENSENOVA_API_KEY`).
+
 ## In-conversation image generation
 
 The extension registers the **`sensenova_generate_image`** tool: the agent calls it directly in the conversation ("draw an architecture diagram"), no model switching or manual API calls.
@@ -61,7 +83,8 @@ pi-sensenova-compat/
 ├── extensions/
 │   └── sensenova-images.ts         # extension layer: provider + tool, single file
 ├── test/
-│   └── sensenova-images.test.mjs   # main seam unit tests
+│   ├── sensenova-images.test.mjs   # main seam unit tests (tool + core)
+│   └── sensenova-command.test.mjs  # command/config unit tests
 ├── sensenova.models.json           # chat-layer config fragment (manual merge, not a package resource)
 ├── docs/                           # ADRs, official API snapshot
 └── README.md / README.zh-CN.md
@@ -76,7 +99,7 @@ pi-sensenova-compat/
 | `size` | `"auto"` | Explicit constants must be multiples of 32, 512–4096, ratio ≤3:1; `auto` adapts to the main image on edits |
 | `response_format` | `"b64_json"` | `b64_json` / `url` (`url` links expire after 24h, hence the inline base64) |
 
-Officially tunable but unchanged this round: `prompt_extend` (default `true`, auto-polishes the prompt), `n` (only `1`), reference images (`/v1/images/edits` requires ≥1 input image, at most 5). Changing any of these means editing the constants in `extensions/sensenova-images.ts`.
+These are the **defaults**; `watermark`, `output_format`, and `size` can be overridden per user via `settings` (see [Slash command](#slash-command)), as can `model` and `output_dir`. Officially tunable but unchanged: `prompt_extend` (default `true`, auto-polishes the prompt), `n` (only `1`), reference images (`/v1/images/edits` requires ≥1 input image, at most 5). Changing these means editing the constants in `extensions/sensenova-images.ts`.
 
 ## Tests
 
@@ -88,7 +111,7 @@ Zero-dependency: the test file imports the extension's `.ts` directly with injec
 
 ## Docs
 
-- Architecture and tradeoffs: `docs/adr/0001-sensenova-integration-architecture.md`, `docs/adr/0002-pi-package-layout.md`
+- Architecture and tradeoffs: `docs/adr/0001-sensenova-integration-architecture.md`, `docs/adr/0002-pi-package-layout.md`, `docs/adr/0003-sensenova-image-command-and-config.md`
 - Domain glossary (中文术语表): `CONTEXT.md`
-- Spec: GitHub issue #1
+- Spec: GitHub issues #1, #2
 - Official API snapshot: `docs/LLM API 服务平台.md`
