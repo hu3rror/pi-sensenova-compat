@@ -9,10 +9,48 @@
 
 两个 provider 共用同一个 key。
 
-- 架构与取舍：`docs/adr/0001-sensenova-integration-architecture.md`、`docs/adr/0002-pi-package-layout.md`
-- 域术语：`CONTEXT.md`
-- 规格：GitHub issue #1（`ready-for-agent`）
-- 官方文档快照：`docs/LLM API 服务平台.md`
+## 快速开始
+
+1. **安装**
+
+   ```sh
+   pi install npm:pi-sensenova-compat
+   ```
+
+   （git：`pi install git:github.com/hu3rror/pi-sensenova-compat`；本地：`pi install C:/绝对/路径/pi-sensenova-compat`——相对路径从 settings 文件所在目录解析，用绝对路径；手动兜底：把 `extensions/sensenova-images.ts` 复制到 `~/.pi/agent/extensions/`。）
+
+2. **认证**：`/login` 录入两个 provider（chat 的 `SenseNova` 与图像的 `SenseNova Images`，同一个 key 即可），或 `export SENSENOVA_API_KEY=sk-...`。
+
+3. **在对话里直接用**
+
+   - 文生图：让 agent 调用 `sensenova_generate_image`，如「画一只白色海豹的插画」。PNG 写入 `<cwd>/.sensenova/`，工具返回本地路径。
+   - 图生图：`image_paths` 传本地图片（第 1 张为主编辑图、至多 5 张），如「把 C:/.../photo.png 的背景改成冬天，保留主体」。工具会把 base64 Data URL 发往 `/v1/images/edits`——完整流程见[对话内生图](#对话内生图)。
+   - 若 `/model` 里没出现两个 provider，先 `/reload` 复查对应 provider 的凭据是否已配置（应出现 `SenseNova` 下 5 个 chat 模型、`SenseNova Images` 下 2 个图像模型）。
+
+## 安装
+
+1. **合并配置**：把 `sensenova.models.json` 中 `providers.sensenova` 合入 `~/.pi/agent/models.json`（文件不存在则复制整文件）。
+2. **安装 pi 包**（四选一）：
+   - 本地目录（开发期）：`pi install C:/绝对/路径/pi-sensenova-compat`，或 `pi -e ./` 单次试跑；
+   - git：`pi install git:github.com/hu3rror/pi-sensenova-compat`；
+   - npm：`pi install npm:pi-sensenova-compat`；
+   - 手动兜底：把 `extensions/sensenova-images.ts` 复制到 `~/.pi/agent/extensions/`（pi 扩展自动发现只认 `.ts`/`.js` 文件）。若旧版 `sensenova-u1.ts` 仍在，删除它（废弃工具 `sensenova_draw_infographic` 对应已下线的 `sensenova-u1-fast` 模型 id，返回 1 小时过期 URL 且不落盘）。
+3. **认证**（二选一）：`/login` 两次录入同一个 key（`SenseNova` + `SenseNova Images`），或设 `SENSENOVA_API_KEY`（两 provider 共用）。
+4. **重载** `/model` 并验证。新扩展/新工具需重启 pi 或 `/reload` 后生效。
+
+## 对话内生图
+
+扩展注册对话内工具 **`sensenova_generate_image`**：agent 在对话中直接调用即可生图（如「画一张架构图」），无需切换模型或手动调接口。
+
+- 参数：
+  - `prompt`（必填）：图片描述；图生图时写编辑指令，说明要改什么、保留什么。
+  - `model`（可选）：`sensenova-u1.5-fast`（默认，较快）或 `sensenova-u1.5-lite`（更高质量）。
+  - `image_paths`（可选）：本地图片路径数组，绝对路径或相对 cwd；带 1 张以上即走 `/v1/images/edits` 图生图，第 1 张为主编辑图、至多 5 张；省略则纯文生图。
+- 图生图流程：工具读取各文件 → 按文件头嗅探 mime（png/jpeg/gif/webp/bmp）→ 拼完整 Data URL（`data:image/{format};base64,…`）→ 发 `/v1/images/edits`。坏路径/非图片/超 5 张在工具层拦截，返回错误且不发网络请求。服务端只接受 PNG/JPEG/WebP、≤10MB、宽高 [256,4096] px、比例 ≤2:1（实测），超分辨率图需客户端先降采样。
+- 产物：PNG 写入 `<cwd>/.sensenova/`，文件名 `时间戳-描述slug.png`；工具返回本地路径（不用会过期的 URL）。图生图返回 `Image edited and saved to …`，文生图返回 `Image generated and saved to …`。
+- 凭据：与 provider 共用 `SenseNova Images` 的 `/login` 密钥或 `$SENSENOVA_API_KEY`；缺凭据时返回错误并说明配置方法。
+
+仓库结构、生图常量、chat 层内部细节、测试与验证记录等对开发更重要的内容在文末。
 
 ## 仓库结构
 
@@ -30,37 +68,6 @@ pi-sensenova-compat/
 └── README.md / README.zh-CN.md
 ```
 
-## 要求
-
-- **pi 0.99.1**（schema 与行为均对照本地 0.99.1 打包产物验证；不采用本地 schema 未出现的字段）
-- Node ≥ 22.18（仅运行测试需要）
-
-## 安装
-
-1. **合并配置**：把 `sensenova.models.json` 中 `providers.sensenova` 合入 `~/.pi/agent/models.json`（文件不存在则复制整文件）。
-2. **安装 pi 包**（三选一）：
-   - 本地目录（开发期）：`pi install C:/绝对/路径/pi-sensenova-compat`（相对路径从 settings 文件所在目录解析，建议用绝对路径），或 `pi -e ./` 单次试跑；
-   - git：`pi install git:github.com/hu3rror/pi-sensenova-compat`；
-   - npm（发布后）：`pi install npm:pi-sensenova-compat`。
-   手动兜底：把 `extensions/sensenova-images.ts` 复制到 `~/.pi/agent/extensions/`（pi 扩展自动发现只认 `.ts`/`.js` 文件）。若旧版 `sensenova-u1.ts` 仍在，删除它（废弃工具 `sensenova_draw_infographic` 对应已下线的 `sensenova-u1-fast` 模型 id，返回 1 小时过期 URL 且不落盘）。
-3. **认证**（二选一）：
-   - `/login`：先后录入 `SenseNova`（chat）与 `SenseNova Images`（图像）两个 provider 的密钥，同一个 key 即可；
-   - 或设环境变量 `SENSENOVA_API_KEY`（两 provider 共用）。
-4. **重载** `/model`：应出现 `SenseNova` 下 5 个 chat 模型、`SenseNova Images` 下 2 个图像模型。模型不出现时先确认对应 provider 的凭据已配置。新扩展/新工具需重启 pi 或 `/reload` 后生效。
-
-## 对话内生图
-
-扩展注册对话内工具 **`sensenova_generate_image`**：agent 在对话中直接调用即可生图（如「画一张架构图」），无需切换模型或手动调接口。
-
-- 参数：
-  - `prompt`（必填）：图片描述；图生图时写编辑指令，说明要改什么、保留什么。
-  - `model`（可选）：`sensenova-u1.5-fast`（默认，较快）或 `sensenova-u1.5-lite`（更高质量）。
-  - `image_paths`（可选）：本地图片路径数组，绝对路径或相对 cwd；带 1 张以上即走 `/v1/images/edits` 图生图，第 1 张为主编辑图、至多 5 张；省略则纯文生图。
-- 图生图流程：工具读取各文件 → 按文件头嗅探 mime（png/jpeg/gif/webp/bmp）→ 拼完整 Data URL（`data:image/{format};base64,…`）→ 发 `/v1/images/edits`。坏路径/非图片/超 5 张在工具层拦截，返回错误且不发网络请求。服务端只接受 PNG/JPEG/WebP、≤10MB、宽高 [256,4096] px、比例 ≤2:1（实测），超分辨率图需客户端先降采样。
-- 产物：PNG 写入 `<cwd>/.sensenova/`，文件名 `时间戳-描述slug.png`；工具返回本地路径（不用会过期的 URL）。图生图返回 `Image edited and saved to …`，文生图返回 `Image generated and saved to …`。
-- 凭据：与 provider 共用 `SenseNova Images` 的 `/login` 密钥或 `$SENSENOVA_API_KEY`；缺凭据时返回错误并说明配置方法。
-- 常量沿用下表（`watermark:false`、`output_format:"png"`、`size:"auto"`、`response_format:"b64_json"`、`n=1`）。
-
 ## 生图常量与官方可调字段
 
 本期硬编码（依据 `docs/LLM API 服务平台.md` U1.5 章节）：
@@ -74,13 +81,18 @@ pi-sensenova-compat/
 
 官方可调但本期不改：`prompt_extend`（默认 `true`，自动润色 prompt）、`n`（仅 `1`）、参考图（`/v1/images/edits` 必带 ≥1 张、至多 5 张）。改这些字段 = 改 `extensions/sensenova-images.ts` 常量。
 
-## chat 模型要点
+## chat 层内部细节
 
 - 5 个模型均定义在配置层，字段与官方参数表逐项对齐（`contextWindow` / `maxTokens` / `thinkingLevelMap` / `compat`）。
 - `kimi-k3` 发 `max_completion_tokens`（模型级 `compat` 覆盖）；其余 4 个发 `max_tokens`。
 - `deepseek-v4-flash` / `deepseek-flash` 开启 `requiresReasoningContentOnAssistantMessages`（官方要求工具轮回传 `reasoning_content`）。
 - `deepseek-v4-flash` 的 `maxTokens` 取 65536（官方「非思考默认 8K／思考默认 64K」的默认档上限；官方 max 思考档可达 128K，如需可上调，这不是官方上限）。
 - 思考：`/thinking off` 发 `reasoning_effort:"none"`；未选档时不发参数、保留官方默认（flash-lite / deepseek-v4 默认 `high`，glm / kimi 默认 `max`）。档位按**服务端实测**暴露：flash-lite / deepseek-v4 合法档是 low/medium/high/xhigh/none——官方文档写 `max` 是错的，发送 `"max"` 会 400，其 `max`/`xhigh` 档均映射 `xhigh`；deepseek-flash 含官方兼容映射；glm-5.2 含原生 minimal/xhigh；kimi 为 low/medium/high/max/none 且偶发服务端间歇错误（限流/波动，非参数问题）。
+
+## 要求
+
+- **pi 0.99.1**（schema 与行为均对照本地 0.99.1 打包产物验证；不采用本地 schema 未出现的字段）
+- Node ≥ 22.18（仅运行测试需要）
 
 ## 测试
 
