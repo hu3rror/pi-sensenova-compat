@@ -17,7 +17,7 @@
     "extensions/"
   ],
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test test/sensenova-images.test.mjs"
   },
   "engines": {
     "node": ">=22.18"

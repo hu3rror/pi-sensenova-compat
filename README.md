@@ -98,7 +98,7 @@ Officially tunable but unchanged this round: `prompt_extend` (default `true`, au
 
 ```sh
 npm test
-# or: node --test test/
+# or: node --test test/sensenova-images.test.mjs
 ```
 
 Zero-dependency: the test file imports the extension's `.ts` directly with injected fetch/now seams (request construction, response mapping, error paths).

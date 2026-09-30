@@ -98,7 +98,7 @@ pi-sensenova-compat/
 
 ```sh
 npm test
-# 或：node --test test/
+# 或：node --test test/sensenova-images.test.mjs
 ```
 
 零依赖：测试文件直接 import 扩展 `.ts`，经注入的 fetch/now seam 验证请求构造、响应映射、错误路径。
