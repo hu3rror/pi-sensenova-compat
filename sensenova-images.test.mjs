@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { generateImages } from "./sensenova-images.mjs";
+import { generateImages } from "./sensenova-images.ts";
 
 const BASE_URL = "https://token.sensenova.cn/v1";
 

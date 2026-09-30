@@ -17,12 +17,12 @@
           "reasoning": true,
           "thinkingLevelMap": {
             "off": "none",
-            "minimal": null,
+            "minimal": "low",
             "low": "low",
             "medium": "medium",
             "high": "high",
-            "xhigh": null,
-            "max": "max"
+            "xhigh": "xhigh",
+            "max": "xhigh"
           },
           "input": [
             "text",
@@ -43,12 +43,12 @@
           "reasoning": true,
           "thinkingLevelMap": {
             "off": "none",
-            "minimal": null,
+            "minimal": "low",
             "low": "low",
             "medium": "medium",
             "high": "high",
-            "xhigh": null,
-            "max": "max"
+            "xhigh": "xhigh",
+            "max": "xhigh"
           },
           "input": [
             "text"

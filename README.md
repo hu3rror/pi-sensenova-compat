@@ -49,7 +49,7 @@
 - `kimi-k3` 使用 `max_completion_tokens`（模型级 `compat` 覆盖）；其余 4 个用 `max_tokens`。
 - `deepseek-v4-flash` / `deepseek-flash` 开启 `requiresReasoningContentOnAssistantMessages`（官方要求工具轮回传 `reasoning_content`）。
 - `deepseek-v4-flash` 的 `maxTokens` 取 65536（官方「非思考默认 8K／思考默认 64K」的默认档上限；**官方 max 思考档可达 128K**，如需可上调，这不是官方上限）。
-- 思考：`/thinking off` 发送 `reasoning_effort:"none"`；未选档时不发参数、保留官方默认（flash-lite / deepseek-v4 默认 `high`，glm / kimi 默认 `max`）。思考档位按官方支持范围暴露：flash-lite / deepseek-v4 / kimi 仅 low/medium/high/max；deepseek-flash 含官方兼容映射档；glm-5.2 含原生 minimal/xhigh。
+- 思考：`/thinking off` 发送 `reasoning_effort:"none"`；未选档时不发参数、保留官方默认（flash-lite / deepseek-v4 默认 `high`，glm / kimi 默认 `max`）。思考档位按**服务端实测**暴露：flash-lite / deepseek-v4 合法档是 low/medium/high/xhigh/none（**官方文档写 max 是错的，发送 `"max"` 会 400**，其 `max`/`xhigh` 档都映射 `xhigh`）；deepseek-flash 含官方兼容映射档；glm-5.2 含原生 minimal/xhigh；kimi 为 low/medium/high/max/none 且偶发服务端间歇错误（限流/波动，非参数问题）。
 
 ## 测试
 
@@ -60,7 +60,8 @@ node --test sensenova-images.test.mjs
 ## 验证状态
 
 - 已对齐：pi 0.99.1 打包产物（models.json schema、openai-completions 实现、provider 合成）与官方快照（ADR 0001）。
-- 待验证：**凭据门控的一次性端到端冒烟**（列模型、一次对话、一次 off 思考、一次工具回传、一次生图/编辑），使用 `/login` 已存凭据；冒烟前需你明确确认。
+- **已冒烟（2026-09-30，deepseek-flash 优先、后全矩阵）**：5 个 chat 模型 × 全部思考档位 wire 级验证通过——`reasoning_effort` 档位映射、`max_tokens`/`max_completion_tokens` 字段、`role:"system"`（supportsDeveloperRole:false）、无 `store` 字段（supportsStore:false）、usage/缓存映射、工具调用多轮回传（read 工具）均验证。详见 ADR 0001「档位实测修正」。
+- 待验证：生图链路（U1.5），需 `sensenova-images` 凭据后在 TUI 中触发生图；其余为凭据门控的一次性端到端复核。
 
 ## 已知待实测项
 

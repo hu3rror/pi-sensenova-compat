@@ -25,7 +25,7 @@ _Avoid_: 对话模型（与 pi 内置 provider 的"对话模型"混淆）
 _Avoid_: 文生图模型、U 模型
 
 **思考档位（reasoning_effort）**:
-官方思考强度取值（low/medium/high/max/none，glm 另有 minimal/xhigh）。pi 侧档位（off…max）经 `thinkingLevelMap` 映射到官方值；`off` 一律映射 `"none"`，未选档不发参数、保留官方默认思考。
+官方思考强度取值；pi 侧档位（off…max）经 `thinkingLevelMap` 映射到官方值；`off` 映射 `"none"`，未选档不发参数、保留官方默认思考。**注意档位值以实测为准而非官方列表**：flash-lite / deepseek-v4 服务端合法值是 low/medium/high/**xhigh**/none（文档写 max，实测 `"max"` 返 400），故其 `max` 与 `xhigh` 档均映射 `"xhigh"`。
 _Avoid_: thinking 开关（GLM 拒绝 `thinking.type:"disabled"`，一条路走 `reasoning_effort`）
 
 **max tokens 字段名**:
