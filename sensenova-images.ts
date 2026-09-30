@@ -1,5 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
 
 const SENSENOVA_BASE_URL = "https://token.sensenova.cn/v1";
 
@@ -20,6 +20,9 @@ const IMAGE_MODELS = [
 	{ id: DEFAULT_MODEL, name: "SenseNova U1.5 Fast" },
 ];
 const IMAGE_DIR_NAME = ".sensenova";
+const MAX_EDIT_IMAGES = 5;
+const MIME_SNIFF_BYTES = 4100;
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 export function generateImages(model, context, options = {}) {
 	// Provider contract: never reject; fold failures into the returned result.
@@ -138,6 +141,109 @@ async function saveImageFile(cwd, prompt, image, now) {
 	return filePath;
 }
 
+export async function readImageBlocks(imagePaths, cwd) {
+	const blocks = [];
+	for (const rawPath of imagePaths) {
+		const filePath = isAbsolute(rawPath) ? rawPath : join(cwd, rawPath);
+		let data;
+		try {
+			data = await readFile(filePath);
+		} catch {
+			throw new Error(`cannot read image file "${rawPath}"`);
+		}
+		const mimeType = detectImageMime(data.subarray(0, MIME_SNIFF_BYTES));
+		if (!mimeType) {
+			throw new Error(`"${rawPath}" is not a supported image file (expected png, jpeg, gif, webp, or bmp)`);
+		}
+		blocks.push({ type: "image", mimeType, data: data.toString("base64") });
+	}
+	return blocks;
+}
+
+function detectImageMime(buffer) {
+	if (startsWith(buffer, [0xff, 0xd8, 0xff])) {
+		// 0xf7 marks a JPEG variant treated as unsupported (same guard as pi).
+		return buffer[3] === 0xf7 ? null : "image/jpeg";
+	}
+	if (startsWith(buffer, PNG_SIGNATURE)) {
+		return isPngImage(buffer) && !isAnimatedPng(buffer) ? "image/png" : null;
+	}
+	if (startsWith(buffer, "GIF87a") || startsWith(buffer, "GIF89a")) {
+		return "image/gif";
+	}
+	if (startsWith(buffer, "RIFF") && startsWith(buffer, "WEBP", 8)) {
+		return "image/webp";
+	}
+	if (startsWith(buffer, "BM") && isBmpImage(buffer)) {
+		return "image/bmp";
+	}
+	return null;
+}
+
+function startsWith(buffer, pattern, offset = 0) {
+	for (let i = 0; i < pattern.length; i++) {
+		const expected = typeof pattern[i] === "string" ? pattern[i].charCodeAt(0) : pattern[i];
+		if (buffer[offset + i] !== expected) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function isPngImage(buffer) {
+	return buffer.length >= 16 && readUint32BE(buffer, 8) === 13 && startsWith(buffer, "IHDR", 12);
+}
+
+// Animated PNGs (acTL chunk before IDAT) carry multiple frames, not one still.
+function isAnimatedPng(buffer) {
+	let offset = PNG_SIGNATURE.length;
+	while (offset + 8 <= buffer.length) {
+		const chunkLength = readUint32BE(buffer, offset);
+		const chunkType = offset + 4;
+		if (startsWith(buffer, "acTL", chunkType)) return true;
+		if (startsWith(buffer, "IDAT", chunkType)) return false;
+		const nextOffset = offset + 8 + chunkLength + 4;
+		if (nextOffset <= offset || nextOffset > buffer.length) return false;
+		offset = nextOffset;
+	}
+	return false;
+}
+
+function isBmpImage(buffer) {
+	if (buffer.length < 26) return false;
+	const declaredFileSize = readUint32LE(buffer, 2);
+	const pixelDataOffset = readUint32LE(buffer, 10);
+	const dibHeaderSize = readUint32LE(buffer, 14);
+	if (declaredFileSize !== 0 && declaredFileSize < 26) return false;
+	if (pixelDataOffset < 14 + dibHeaderSize) return false;
+	if (declaredFileSize !== 0 && pixelDataOffset >= declaredFileSize) return false;
+	let colorPlanes;
+	let bitsPerPixel;
+	if (dibHeaderSize === 12) {
+		colorPlanes = readUint16LE(buffer, 22);
+		bitsPerPixel = readUint16LE(buffer, 24);
+	} else if (dibHeaderSize >= 40 && dibHeaderSize <= 124) {
+		if (buffer.length < 30) return false;
+		colorPlanes = readUint16LE(buffer, 26);
+		bitsPerPixel = readUint16LE(buffer, 28);
+	} else {
+		return false;
+	}
+	return colorPlanes === 1 && [1, 4, 8, 16, 24, 32].includes(bitsPerPixel);
+}
+
+function readUint32BE(buffer, offset) {
+	return ((buffer[offset] << 24) | (buffer[offset + 1] << 16) | (buffer[offset + 2] << 8) | buffer[offset + 3]) >>> 0;
+}
+
+function readUint32LE(buffer, offset) {
+	return (buffer[offset] | (buffer[offset + 1] << 8) | (buffer[offset + 2] << 16) | (buffer[offset + 3] << 24)) >>> 0;
+}
+
+function readUint16LE(buffer, offset) {
+	return buffer[offset] | (buffer[offset + 1] << 8);
+}
+
 function toolError(message) {
 	const text = message.startsWith(ERROR_PREFIX) ? message : `${ERROR_PREFIX}${message}`;
 	return { content: [{ type: "text", text }], isError: true };
@@ -149,15 +255,23 @@ export function createGenerateImageTool(options = {}) {
 		name: "sensenova_generate_image",
 		label: "SenseNova Image Generator",
 		description:
-			"Generate an image from a text prompt with the SenseNova U1.5 model and save it as a PNG. Returns the path of the saved image. Use model \"sensenova-u1.5-lite\" for higher quality or \"sensenova-u1.5-fast\" (default) for quicker results.",
-		promptSnippet: "Generate an image from a text prompt (SenseNova U1.5)",
+			"Generate or edit an image with the SenseNova U1.5 model and save it as a PNG; returns the saved file path. Omit image_paths to generate an image from the prompt. To edit images, pass local file paths in image_paths (absolute, or relative to the working directory): the first image is the main edit target and up to 5 images are allowed; describe the desired result and what to keep unchanged in the prompt. Use model \"sensenova-u1.5-lite\" for higher quality or \"sensenova-u1.5-fast\" (default) for quicker results.",
+		promptSnippet: "Generate or edit an image (SenseNova U1.5)",
 		parameters: {
 			type: "object",
 			properties: {
 				prompt: {
 					type: "string",
 					description:
-						"Detailed text description of the image to generate: subject, style, composition, and mood.",
+						"Detailed text description of the image to generate or the edit to apply: subject, style, composition, and mood; for edits, state what to keep unchanged.",
+				},
+				image_paths: {
+					type: "array",
+					items: { type: "string" },
+					minItems: 1,
+					maxItems: 5,
+					description:
+						"Local paths of reference images to edit (optional): pass 1+ paths to run image editing, the first image is the main edit target and up to 5 images are allowed; omit to generate from text only.",
 				},
 				model: {
 					type: "string",
@@ -173,6 +287,13 @@ export function createGenerateImageTool(options = {}) {
 			if (typeof params.prompt !== "string" || params.prompt.trim().length === 0) {
 				return toolError("a text prompt is required");
 			}
+			const imagePaths = params.image_paths ?? [];
+			if (!Array.isArray(imagePaths) || imagePaths.some((p) => typeof p !== "string" || p.length === 0)) {
+				return toolError("image_paths must be an array of non-empty file paths");
+			}
+			if (imagePaths.length > MAX_EDIT_IMAGES) {
+				return toolError(`image_paths supports at most ${MAX_EDIT_IMAGES} images, got ${imagePaths.length}`);
+			}
 			const model = ctx.modelRegistry.getModelOfType("image", PROVIDER_ID, modelId);
 			if (!model) {
 				return toolError(`image model "${modelId}" is not in the catalog`);
@@ -183,11 +304,15 @@ export function createGenerateImageTool(options = {}) {
 					`no API key for provider "${PROVIDER_ID}"; run /login and choose \"SenseNova Images\", or set $SENSENOVA_API_KEY`,
 				);
 			}
-			const result = await generateImages(
-				model,
-				{ input: [{ type: "text", text: params.prompt }] },
-				{ apiKey: auth.apiKey, signal, fetch: options.fetch },
-			);
+			const input = [{ type: "text", text: params.prompt }];
+			if (imagePaths.length > 0) {
+				try {
+					input.push(...(await readImageBlocks(imagePaths, ctx.cwd)));
+				} catch (error) {
+					return toolError(error instanceof Error ? error.message : String(error));
+				}
+			}
+			const result = await generateImages(model, { input }, { apiKey: auth.apiKey, signal, fetch: options.fetch });
 			if (result.stopReason === "aborted") {
 				return toolError("image generation aborted");
 			}
@@ -205,7 +330,7 @@ export function createGenerateImageTool(options = {}) {
 				return toolError(`failed to save image: ${error instanceof Error ? error.message : String(error)}`);
 			}
 			return {
-				content: [{ type: "text", text: `Image generated and saved to ${filePath}` }],
+				content: [{ type: "text", text: `Image ${imagePaths.length > 0 ? "edited" : "generated"} and saved to ${filePath}` }],
 				details: { model: modelId, path: filePath },
 			};
 		},

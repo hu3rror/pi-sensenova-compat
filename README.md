@@ -34,8 +34,9 @@
 
 扩展注册对话内工具 **`sensenova_generate_image`**：agent 在对话中直接调用即可生图（如「画一张架构图」），无需切换模型或手动调接口。
 
-- 参数：`prompt`（必填，图片描述）；`model`（可选，`sensenova-u1.5-fast` 默认、`sensenova-u1.5-lite` 更高画质）。
-- 产物：PNG 写入 `<cwd>/.sensenova/`，文件名 `时间戳-描述slug.png`；工具返回本地路径（不用会过期的 URL）。
+- 参数：`prompt`（必填，图片描述）；`model`（可选，`sensenova-u1.5-fast` 默认、`sensenova-u1.5-lite` 更高画质）；`image_paths`（可选，本地图片路径数组，绝对路径或相对 cwd；带 1 张以上即走 `/v1/images/edits` 图生图，第 1 张为主编辑图、至多 5 张；省略则纯文生图）。
+- 图生图流程：工具读取 `image_paths` 各文件 → 按文件头嗅探 mime（png/jpeg/gif/webp/bmp）→ 以完整 Data URL（`data:image/{format};base64,…`）组装 edits 请求；坏路径 / 非图片 / 超 5 张在工具层拦截并返回错误，不发网络请求。
+- 产物：PNG 写入 `<cwd>/.sensenova/`，文件名 `时间戳-描述slug.png`；工具返回本地路径（不用会过期的 URL）。图生图返回 `Image edited and saved to …`（文生图为 `Image generated and saved to …`）。
 - 凭据：与 provider 共用 `SenseNova Images` 的 `/login` 密钥或 `$SENSENOVA_API_KEY`；缺凭据时工具返回错误提示并说明配置方法。
 - 常量沿用下表（`watermark:false`、`output_format:"png"`、`size:"auto"`、`response_format:"b64_json"`、`n=1`）。
 
@@ -78,6 +79,7 @@ node --test sensenova-images.test.mjs
 - 工具多轮回传与思考字段名出处（官方示例 `reasoning` vs 响应 `reasoning_content`）：流式侧依赖 pi 三字段兼容，以实测为准。
 - kimi-k3「必须原样回传完整 assistant 消息」：现为字段级等价重建，需实测确认。
 - `supportsStore: false` 为保守关闭；若实测服务端接受 `store` 字段可改回 `true`。
+- **edits 实发请求待实测（2026-10）**：`image_paths` 图生图通路的服务端接受度以实发请求为准——base64 输入的大小上限、jpeg/webp/bmp/gif 各 mime 是否都收（失败时看 `payload.error` 文案）；数组上限按官方表「第 1 张为主编辑图，至多 5 张参考图」字面为 6 张，当前按交接确认的 >5 张拦截，以实测为准。
 
 ## 环境变量示例
 

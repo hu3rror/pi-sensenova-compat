@@ -29,6 +29,9 @@ maxTokens 取值：`deepseek-v4-flash` 取 65536（官方「非思考默认 8K�
 
 - 用 `response_format:"b64_json"`：Pi 的 `AssistantImages.output` 契约就是 `{type:"image", mimeType, data}`（无前缀 base64），与官方 `data[].b64_json` 一一对应，规避 URL 24 小时过期问题，无需自行下载。
 - 分流：`context.input` 含图像块 → `/v1/images/edits`；纯文本 → `/v1/images/generations`（官方 edits 必带输入图、至多 5 张参考图）。
+- 工具形态：扩展现有 `sensenova_generate_image` 增加可选 `image_paths`（≥1 即走 edits）而非独立 `sensenova_edit_image`——edits 分流已在 provider seam 完整实现并单测，共享认证/模型/落盘/错误前缀，新引入的可测逻辑只有文件读取与嗅探；参考图只能来自磁盘路径（工具参数是 LLM 生成的 JSON，拿不到对话消息里的图片内容）。
+- 文件嗅探自实现（对齐 pi `dist/utils/mime.js` 字节规则）而非在扩展里 import `detectSupportedImageMimeTypeFromFile`：该导出只能在 pi 运行时经 jiti alias 解析；仓库测试 seam 用裸 `node --test` 直接 import 扩展，无 node_modules 依赖且 ESM 不走 NODE_PATH，无法解析该包。自实现保持零依赖、可单测。
+- 拦截规则：`image_paths` 非字符串数组 / 空项 / >5 张 / 文件不存在 / 非图片 → 工具层 `toolError`（沿用 `ERROR_PREFIX`），不发网络请求。
 - 常量：`watermark:false`（当前公测免费去水印）、`output_format:"png"`、`size:"auto"`；本期不做可配置（README 写明官方默认与可调字段）。
 - 计费：usage 映射官方 `input_tokens/output_tokens/total_tokens`，cost 置 0（TokenPlan 积分制，不映射美元成本）。
 

@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGenerateImageTool, generateImages } from "./sensenova-images.ts";
+import { createGenerateImageTool, generateImages, readImageBlocks } from "./sensenova-images.ts";
 
 const BASE_URL = "https://token.sensenova.cn/v1";
 
@@ -43,6 +43,14 @@ function okResponse(payload = {}) {
 function imageBlock(mimeType = "image/png", data = "AAAA") {
 	return { type: "image", mimeType, data };
 }
+
+const TINY_PNG = Buffer.from(
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+	"base64",
+);
+const TINY_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+const TINY_WEBP = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBP"), Buffer.alloc(8)]);
+const TINY_GIF = Buffer.from("GIF89a".padEnd(16, "\0"));
 
 test("text-only input posts to /images/generations with the agreed constants", async () => {
 	const { calls, impl } = fetchRecorder(okResponse());
@@ -279,5 +287,147 @@ test("tool reports an aborted generation as an error result", async () => {
 
 		assert.equal(result.isError, true);
 		assert.match(result.content[0].text, /aborted/i);
+	});
+});
+
+// --- readImageBlocks (edits reference images) ---
+
+function tinyBmp() {
+	const bmp = Buffer.alloc(54);
+	bmp.write("BM", 0, "ascii");
+	bmp.writeUInt32LE(0, 2); // declared file size: 0 means unset, checks skipped
+	bmp.writeUInt32LE(54, 10); // pixel data offset
+	bmp.writeUInt32LE(40, 14); // BITMAPINFOHEADER
+	bmp.writeUInt32LE(1, 18); // width
+	bmp.writeUInt32LE(1, 22); // height
+	bmp.writeUInt16LE(1, 26); // color planes
+	bmp.writeUInt16LE(24, 28); // bits per pixel
+	return bmp;
+}
+
+test("readImageBlocks maps file bytes to mime types and base64 data", async () => {
+	await withTempCwd(async (cwd) => {
+		const files = [
+			["photo.png", TINY_PNG, "image/png"],
+			["photo.jpg", TINY_JPEG, "image/jpeg"],
+			["photo.webp", TINY_WEBP, "image/webp"],
+			["photo.gif", TINY_GIF, "image/gif"],
+			["photo.bmp", tinyBmp(), "image/bmp"],
+		];
+		const targets = [];
+		for (const [name, bytes] of files) {
+			const filePath = join(cwd, name);
+			await writeFile(filePath, bytes);
+			targets.push(filePath);
+		}
+
+		const blocks = await readImageBlocks(targets, cwd);
+
+		assert.deepEqual(
+			blocks.map(({ type, mimeType, data }) => ({ type, mimeType, data: Buffer.from(data, "base64") })),
+			files.map(([_name, bytes, mimeType]) => ({ type: "image", mimeType, data: bytes })),
+		);
+	});
+});
+
+test("tool edits reference images via /images/edits and reports the saved path", async () => {
+	const { calls, impl } = fetchRecorder(okResponse());
+	const tool = makeTool(impl);
+	await withTempCwd(async (cwd) => {
+		await writeFile(join(cwd, "main.png"), TINY_PNG);
+		await writeFile(join(cwd, "ref.jpg"), TINY_JPEG);
+		const result = await tool.execute(
+			"call-1",
+			{ prompt: "put it on a glacier", image_paths: ["main.png", "ref.jpg"] },
+			undefined,
+			undefined,
+			toolContext({ cwd }),
+		);
+
+		assert.equal(result.isError, undefined);
+		assert.equal(
+			result.content[0].text,
+			`Image edited and saved to ${join(cwd, ".sensenova", "20260930-101530-000-put-it-on-a-glacier.png")}`,
+		);
+		assert.equal(result.details.path, join(cwd, ".sensenova", "20260930-101530-000-put-it-on-a-glacier.png"));
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0].url, `${BASE_URL}/images/edits`);
+		const body = JSON.parse(calls[0].init.body);
+		assert.deepEqual(body.images, [
+			{ image_url: `data:image/png;base64,${TINY_PNG.toString("base64")}` },
+			{ image_url: `data:image/jpeg;base64,${TINY_JPEG.toString("base64")}` },
+		]);
+	});
+});
+
+test("tool rejects more than 5 image_paths without a network call", async () => {
+	const { calls, impl } = fetchRecorder(okResponse());
+	const tool = makeTool(impl);
+	await withTempCwd(async (cwd) => {
+		const result = await tool.execute(
+			"call-1",
+			{ prompt: "x", image_paths: ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"] },
+			undefined,
+			undefined,
+			toolContext({ cwd }),
+		);
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0].text, /at most 5 images, got 6/);
+		assert.equal(calls.length, 0);
+	});
+});
+
+test("tool rejects malformed image_paths without a network call", async () => {
+	const { calls, impl } = fetchRecorder(okResponse());
+	const tool = makeTool(impl);
+	await withTempCwd(async (cwd) => {
+		const nonArray = await tool.execute("call-1", { prompt: "x", image_paths: "main.png" }, undefined, undefined, toolContext({ cwd }));
+		const emptyEntry = await tool.execute("call-1", { prompt: "x", image_paths: [""] }, undefined, undefined, toolContext({ cwd }));
+
+		assert.equal(nonArray.isError, true);
+		assert.match(nonArray.content[0].text, /array of non-empty file paths/);
+		assert.equal(emptyEntry.isError, true);
+		assert.match(emptyEntry.content[0].text, /array of non-empty file paths/);
+		assert.equal(calls.length, 0);
+	});
+});
+
+test("tool reports a missing image file without a network call", async () => {
+	const { calls, impl } = fetchRecorder(okResponse());
+	const tool = makeTool(impl);
+	await withTempCwd(async (cwd) => {
+		const result = await tool.execute(
+			"call-1",
+			{ prompt: "x", image_paths: ["missing.png"] },
+			undefined,
+			undefined,
+			toolContext({ cwd }),
+		);
+
+		assert.equal(result.isError, true);
+		assert.equal(result.content[0].text, 'SenseNova Images: cannot read image file "missing.png"');
+		assert.equal(calls.length, 0);
+	});
+});
+
+test("tool reports a non-image file without a network call", async () => {
+	const { calls, impl } = fetchRecorder(okResponse());
+	const tool = makeTool(impl);
+	await withTempCwd(async (cwd) => {
+		await writeFile(join(cwd, "notes.txt"), "not an image");
+		// A RIFF container that is not WEBP must not pass the webp sniff.
+		await writeFile(
+			join(cwd, "sound.wav"),
+			Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WAVE"), Buffer.alloc(8)]),
+		);
+		const notes = await tool.execute("call-1", { prompt: "x", image_paths: ["notes.txt"] }, undefined, undefined, toolContext({ cwd }));
+		const wav = await tool.execute("call-2", { prompt: "x", image_paths: ["sound.wav"] }, undefined, undefined, toolContext({ cwd }));
+
+		assert.equal(notes.isError, true);
+		assert.match(notes.content[0].text, /not a supported image/);
+		assert.equal(wav.isError, true);
+		assert.match(wav.content[0].text, /not a supported image/);
+		assert.equal(calls.length, 0);
 	});
 });
