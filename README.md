@@ -1,0 +1,77 @@
+# pi-sensenova-compat
+
+让 [pi](https://pi.dev) 0.99.1 使用商汤 SenseNova（TokenPlan 网关）的 5 个 chat 模型与 2 个 U 系列生图模型。配置优先：chat 层纯 `models.json`，生图层一个薄扩展。
+
+- 架构与取舍：`docs/adr/0001-sensenova-integration-architecture.md`
+- 域术语：`CONTEXT.md`
+- 规格：GitHub issue #1（`ready-for-agent`）
+- 官方文档快照：`docs/LLM API 服务平台.md`（正文 = 桌面源版 − 5 行，frontmatter 已精简）
+
+## 交付物
+
+| 文件 | 说明 |
+| --- | --- |
+| `sensenova.models.json` | chat 层配置片段，合并进 pi 的 `models.json` |
+| `sensenova-images.mjs` | 生图扩展（U1.5 Lite / Fast），注册 provider `sensenova-images` |
+| `sensenova-images.test.mjs` | 主 seam 单元测试（请求构造 / 响应映射 / 错误路径） |
+| 本 README | 安装、认证、常量与验证说明 |
+
+## 要求
+
+- **pi 0.99.1**（所有 schema 与行为依据本地 0.99.1 打包产物验证；不采用未在本地 schema 出现的字段）
+- Node ≥ 20（仅运行测试需要）
+
+## 安装
+
+1. **合并配置**：把 `sensenova.models.json` 中 `providers.sensenova` 合入 `~/.pi/agent/models.json`（若文件不存在则复制整文件）。
+2. **安装扩展**：复制 `sensenova-images.mjs` 到 `~/.pi/agent/extensions/`。
+3. **认证**（二选一）：
+   - `/login`：先后录入两个 provider 的密钥——`SenseNova`（chat）与 `SenseNova Images`（生图），同一个 key 即可；
+   - 或设环境变量 `SENSENOVA_API_KEY`（两 provider 共用）。
+4. **重载** `/model`：应出现 `SenseNova` 下 5 个 chat 模型、`SenseNova Images` 下 2 个生图模型。模型不出现时先确认对应 provider 的凭据已配置。
+
+## 生图常量与官方可调字段
+
+本期硬编码（依据 `docs/LLM API 服务平台.md` U1.5 章节）：
+
+| 字段 | 本期值 | 官方默认/说明 |
+| --- | --- | --- |
+| `watermark` | `false` | 官方默认 `true`（商汤 Logo 水印）；`false` 当前公测免费无水印 |
+| `output_format` | `"png"` | 官方 `png` / `jpeg` / `webp` |
+| `size` | `"auto"` | 官方常量需 32 倍数、512–4096、比例 ≤3:1；`auto` 时 edits 自动适配主图 |
+| `response_format` | `"b64_json"` | 官方 `b64_json` / `url`（`url` 链接 24 小时过期，故用 `b64_json` 直传） |
+
+官方可调但本期不改：`prompt_extend`（默认 `true`，prompt 自动润色）、`n`（仅 `1`）、参考图（`/v1/images/edits` 必带 ≥1 张、至多 5 张）。改这些字段 = 改 `sensenova-images.mjs` 常量。
+
+## chat 模型要点
+
+- 5 个模型均定义在配置层，字段与官方参数表逐项对齐（`contextWindow` / `maxTokens` / `thinkingLevelMap` / `compat`）。
+- `kimi-k3` 使用 `max_completion_tokens`（模型级 `compat` 覆盖）；其余 4 个用 `max_tokens`。
+- `deepseek-v4-flash` / `deepseek-flash` 开启 `requiresReasoningContentOnAssistantMessages`（官方要求工具轮回传 `reasoning_content`）。
+- `deepseek-v4-flash` 的 `maxTokens` 取 65536（官方「非思考默认 8K／思考默认 64K」的默认档上限；**官方 max 思考档可达 128K**，如需可上调，这不是官方上限）。
+- 思考：`/thinking off` 发送 `reasoning_effort:"none"`；未选档时不发参数、保留官方默认（flash-lite / deepseek-v4 默认 `high`，glm / kimi 默认 `max`）。思考档位按官方支持范围暴露：flash-lite / deepseek-v4 / kimi 仅 low/medium/high/max；deepseek-flash 含官方兼容映射档；glm-5.2 含原生 minimal/xhigh。
+
+## 测试
+
+```sh
+node --test sensenova-images.test.mjs
+```
+
+## 验证状态
+
+- 已对齐：pi 0.99.1 打包产物（models.json schema、openai-completions 实现、provider 合成）与官方快照（ADR 0001）。
+- 待验证：**凭据门控的一次性端到端冒烟**（列模型、一次对话、一次 off 思考、一次工具回传、一次生图/编辑），使用 `/login` 已存凭据；冒烟前需你明确确认。
+
+## 已知待实测项
+
+- 工具多轮回传与思考字段名出处（官方示例 `reasoning` vs 响应 `reasoning_content`）：流式侧依赖 pi 三字段兼容，以实测为准。
+- kimi-k3「必须原样回传完整 assistant 消息」：现为字段级等价重建，需实测确认。
+- `supportsStore: false` 为保守关闭；若实测服务端接受 `store` 字段可改回 `true`。
+
+## 环境变量示例
+
+仓库保护规则不允许直接存放 `.env.example` 文件（示例在此处）：
+
+```sh
+export SENSENOVA_API_KEY=sk-...
+```
