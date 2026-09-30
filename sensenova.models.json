@@ -111,7 +111,7 @@
             "text"
           ],
           "contextWindow": 1048576,
-          "maxTokens": 131072,
+          "maxTokens": 65536,
           "cost": {
             "input": 0,
             "output": 0,

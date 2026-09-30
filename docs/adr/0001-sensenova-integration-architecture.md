@@ -17,7 +17,7 @@ SenseNova（TokenPlan 网关，`token.sensenova.cn/v1`）提供标准 OpenAI 兼
 
 保持默认 `thinkingFormat: "openai"`（顶层 `reasoning_effort`），不使用 `string-thinking`：GLM 官方拒绝 `thinking.type:"disabled"`，而所有 5 个 chat 模型都接受 `reasoning_effort`（设 `none` 即关思考）。`thinkingLevelMap.off` 一律 `"none"`，用户未选档时不发参数、保留官方默认思考。deepseek-flash 按官方兼容映射设档（minimal→low、medium→high、xhigh→high）。
 
-maxTokens 取值：`deepseek-v4-flash` 取 65536（官方「非思考默认 8K／思考默认 64K」的默认档上限；官方 max 思考档可达 128K，后续可按需上调——不要误读为官方上限只有 64K）。其余：flash-lite 65536（\[1,65536\]）、deepseek-flash 131072（默认）、glm-5.2 131072（\[1,128K\]）、kimi-k3 131072（`max_completion_tokens` 默认 128K）。
+maxTokens 取值：`deepseek-v4-flash` 取 65536（官方「非思考默认 8K／思考默认 64K」的默认档上限；官方 max 思考档可达 128K，后续可按需上调——不要误读为官方上限只有 64K）。其余：flash-lite 65536（\[1,65536\]）、deepseek-flash 131072（默认）、glm-5.2 65536（\[1,128K\]，取官方默认档）、kimi-k3 131072（`max_completion_tokens` 默认 128K）。
 
 思考字段名：官方文档的工具回传示例与响应结构对思考字段名（`reasoning` vs `reasoning_content`）有出入；流式侧依赖 pi 0.99.1 内置实现对 `reasoning_content`/`reasoning`/`reasoning_text` 的兼容识别，工具调用多轮回传是否完全无坑以实测为准。
 
