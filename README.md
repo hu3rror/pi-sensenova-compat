@@ -61,7 +61,8 @@ node --test sensenova-images.test.mjs
 
 - 已对齐：pi 0.99.1 打包产物（models.json schema、openai-completions 实现、provider 合成）与官方快照（ADR 0001）。
 - **已冒烟（2026-09-30，deepseek-flash 优先、后全矩阵）**：5 个 chat 模型 × 全部思考档位 wire 级验证通过——`reasoning_effort` 档位映射、`max_tokens`/`max_completion_tokens` 字段、`role:"system"`（supportsDeveloperRole:false）、无 `store` 字段（supportsStore:false）、usage/缓存映射、工具调用多轮回传（read 工具）均验证。详见 ADR 0001「档位实测修正」。
-- 待验证：生图链路（U1.5），需 `sensenova-images` 凭据后在 TUI 中触发生图；其余为凭据门控的一次性端到端复核。
+- **结构历史验证（同日）**：多 system 消息 → 折叠为单条（无 400）；`assistant. content:null` 无工具 → 从请求跳过；带思考的 assistant 历史 → 按原 wire 字段名（`reasoning_content`）回传；跨请求工具历史（`tool_calls→tool→toolResult`）完整回传。
+- 待验证：生图链路（U1.5），需 `sensenova-images` 凭据后在 TUI 中触发生图。
 
 ## 已知待实测项
 

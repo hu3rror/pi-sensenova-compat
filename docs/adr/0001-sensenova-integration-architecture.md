@@ -23,6 +23,8 @@ maxTokens 取值：`deepseek-v4-flash` 取 65536（官方「非思考默认 8K�
 
 档位实测修正（2026-09 全矩阵冒烟，wire 级验证）：`sensenova-6.8-flash-lite` 与 `deepseek-v4-flash` 的官方文档写低/中/高/max/none，但服务端实际合法值为 low/medium/high/xhigh/none——`reasoning_effort:"max"` 返回 400（`invalid_request_error`）。两模型据此把 `max` 档与 `xhigh` 档都映射到 `"xhigh"`，7 个 pi 档全部指向合法值（文档错误，以实测为准）。其余模型档位 wire 验证均正确：deepseek-flash 兼容映射（minimal→low、medium→high、xhigh→high）与原生 none/low/high/max、glm-5.2 原生 7 档、kimi-k3 的 low/medium/high/max/none。`kimi-k3` 偶发服务端间歇错误（同参数时成时败），非参数问题。
 
+结构历史实测：多 system 消息折叠为单条；空 assistant（无文本无工具）从请求跳过；带思考历史的 assistant 按原 wire 字段名（`reasoning_content`）回传；跨会话工具历史（tool_calls→tool→toolResult）完整回传，均无 400。
+
 ## 生图
 
 - 用 `response_format:"b64_json"`：Pi 的 `AssistantImages.output` 契约就是 `{type:"image", mimeType, data}`（无前缀 base64），与官方 `data[].b64_json` 一一对应，规避 URL 24 小时过期问题，无需自行下载。
