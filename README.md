@@ -1,101 +1,113 @@
-# pi-sensenova-compat
+# pi-sensenova
 
-让 [pi](https://pi.dev) 0.99.1 使用商汤 SenseNova（TokenPlan 网关）的 5 个 chat 模型与 2 个 U 系列生图模型。配置优先：chat 层纯 `models.json`，生图层一个薄扩展。
+[简体中文](README.zh-CN.md)
 
-- 架构与取舍：`docs/adr/0001-sensenova-integration-architecture.md`
-- 域术语：`CONTEXT.md`
-- 规格：GitHub issue #1（`ready-for-agent`）
-- 官方文档快照：`docs/LLM API 服务平台.md`（正文 = 桌面源版 − 5 行，frontmatter 已精简）
+Make pi 0.99.1 talk to SenseNova (TokenPlan gateway, `token.sensenova.cn/v1`). Two layers:
 
-## 交付物
+- **Chat**: the 5 SenseNova chat models as `models.json` config on an `openai-completions` provider (`sensenova`). Purely declarative, no extension code.
+- **Image**: the 2 U-series models (`sensenova-u1.5-lite`, `sensenova-u1.5-fast`) through a thin extension that registers the `sensenova-images` provider and the in-conversation `sensenova_generate_image` tool.
 
-本仓库即一个 [pi 包](https://pi.dev)（`pi-package`），标准布局：
+Both providers accept the same API key.
+
+- Architecture and tradeoffs: `docs/adr/0001-sensenova-integration-architecture.md`, `docs/adr/0002-pi-package-layout.md`
+- Domain glossary (中文术语表): `CONTEXT.md`
+- Spec: GitHub issue #1 (`ready-for-agent`)
+- Official API snapshot: `docs/LLM API 服务平台.md`
+
+## Layout
+
+This repo is a pi package (`package.json` carries the `pi-package` keyword and a `pi.extensions` manifest):
 
 ```text
 pi-sensenova-compat/
-├── package.json              # 包清单：pi.extensions 显式声明扩展 + pi-package keyword
+├── package.json                    # pi package manifest
 ├── extensions/
-│   └── sensenova-images.ts    # 扩展层（provider `sensenova-images`）+ 工具 `sensenova_generate_image`
+│   └── sensenova-images.ts         # extension layer: provider + tool, single file
 ├── test/
-│   └── sensenova-images.test.mjs  # 主 seam 单元测试（请求构造 / 响应映射 / 错误路径）
-├── sensenova.models.json      # chat 层配置片段（非包资源，手动合并）
-├── docs/                      # ADR / issue-tracker / 官方文档快照
-└── README.md                  # 安装、认证、常量与验证说明
+│   └── sensenova-images.test.mjs   # main seam unit tests
+├── sensenova.models.json           # chat-layer config fragment (manual merge, not a package resource)
+├── docs/                           # ADRs, issue-tracker docs, official API snapshot
+└── README.md / README.zh-CN.md
 ```
 
-## 要求
+## Requirements
 
-- **pi 0.99.1**（所有 schema 与行为依据本地 0.99.1 打包产物验证；不采用未在本地 schema 出现的字段）
-- Node ≥ 22.18（类型剥离直跑 `.ts` 测试；仅运行测试需要）
+- pi 0.99.1 (every schema and behavior is verified against the local 0.99.1 build; no fields appear that the local schema lacks)
+- Node >= 22.18 (only to run the tests)
 
-## 安装
+## Install
 
-1. **合并配置**：把 `sensenova.models.json` 中 `providers.sensenova` 合入 `~/.pi/agent/models.json`（若文件不存在则复制整文件）。
-2. **安装 pi 包**（三选一）：
-   - 本地目录（开发期）：`pi install C:/Users/Hue/Repos/pi-sensenova-compat`（相对路径从 settings 文件所在目录解析，建议用绝对路径）或 `pi -e ./` 单次试跑；
-   - git：`pi install git:github.com/hu3rror/pi-sensenova-compat`；
-   - npm（发布后）：`pi install npm:pi-sensenova`。
-   手动兜底：把 `extensions/sensenova-images.ts` 复制到 `~/.pi/agent/extensions/`（pi 扩展自动发现只认 `.ts`/`.js` 文件）。若旧版 `sensenova-u1.ts` 仍在，删除它（旧工具 `sensenova_draw_infographic` 已废弃：模型 id `sensenova-u1-fast` 早已下线，返回 1 小时过期 URL 且不落盘）。
-3. **认证**（二选一）：
-   - `/login`：先后录入两个 provider 的密钥——`SenseNova`（chat）与 `SenseNova Images`（生图），同一个 key 即可；
-   - 或设环境变量 `SENSENOVA_API_KEY`（两 provider 共用）。
-4. **重载** `/model`：应出现 `SenseNova` 下 5 个 chat 模型、`SenseNova Images` 下 2 个生图模型。模型不出现时先确认对应 provider 的凭据已配置。新扩展/新工具需要重启 pi 或 `/reload` 后生效。
+1. **Merge the config fragment**: add the `providers.sensenova` block from `sensenova.models.json` to `~/.pi/agent/models.json` (copy the whole file if it does not exist).
+2. **Install the package** (pick one):
+   - Local path (development): `pi install C:/path/to/pi-sensenova-compat` (relative paths resolve from the settings file's directory, so use an absolute path), or `pi -e ./` for a one-shot run.
+   - Git: `pi install git:github.com/hu3rror/pi-sensenova-compat`.
+   - npm (after publishing): `pi install npm:pi-sensenova`.
+   - Manual fallback: copy `extensions/sensenova-images.ts` to `~/.pi/agent/extensions/` (pi discovers `.ts`/`.js` files). If an old `sensenova-u1.ts` is still present, delete it: the retired `sensenova_draw_infographic` tool targets the offline `sensenova-u1-fast` model id and returns 1-hour-expiring URLs without saving files.
+3. **Authenticate** (either):
+   - `/login`, entering the key twice: provider `SenseNova` (chat) and provider `SenseNova Images` (image), same key is fine.
+   - Or set the `SENSENOVA_API_KEY` environment variable (shared by both providers).
+4. **Reload** `/model`: `SenseNova` should list the 5 chat models and `SenseNova Images` the 2 image models. If a model is missing, check that provider's credentials first. New extensions/tools require a pi restart or `/reload`.
 
-## 对话内生图
+## In-conversation image generation
 
-扩展注册对话内工具 **`sensenova_generate_image`**：agent 在对话中直接调用即可生图（如「画一张架构图」），无需切换模型或手动调接口。
+The extension registers the **`sensenova_generate_image`** tool: the agent calls it directly in the conversation ("draw an architecture diagram"), no model switching or manual API calls.
 
-- 参数：`prompt`（必填，图片描述）；`model`（可选，`sensenova-u1.5-fast` 默认、`sensenova-u1.5-lite` 更高画质）；`image_paths`（可选，本地图片路径数组，绝对路径或相对 cwd；带 1 张以上即走 `/v1/images/edits` 图生图，第 1 张为主编辑图、至多 5 张；省略则纯文生图）。
-- 图生图流程：工具读取 `image_paths` 各文件 → 按文件头嗅探 mime（png/jpeg/gif/webp/bmp）→ 以完整 Data URL（`data:image/{format};base64,…`）组装 edits 请求；坏路径 / 非图片 / 超 5 张在工具层拦截并返回错误，不发网络请求。服务端只接受 PNG/JPEG/WebP、≤10MB、宽高 [256,4096]、比例 ≤2:1（实测），超分辨率图需客户端先降采样。
-- 产物：PNG 写入 `<cwd>/.sensenova/`，文件名 `时间戳-描述slug.png`；工具返回本地路径（不用会过期的 URL）。图生图返回 `Image edited and saved to …`（文生图为 `Image generated and saved to …`）。
-- 凭据：与 provider 共用 `SenseNova Images` 的 `/login` 密钥或 `$SENSENOVA_API_KEY`；缺凭据时工具返回错误提示并说明配置方法。
-- 常量沿用下表（`watermark:false`、`output_format:"png"`、`size:"auto"`、`response_format:"b64_json"`、`n=1`）。
+- Parameters:
+  - `prompt` (required): image description, or, for edits, the edit instruction stating what to keep unchanged.
+  - `model` (optional): `sensenova-u1.5-fast` (default, quicker) or `sensenova-u1.5-lite` (higher quality).
+  - `image_paths` (optional): local image paths, absolute or relative to the cwd. Passing 1+ paths switches to `/v1/images/edits`: the first image is the main edit target, at most 5 images. Omitting it generates from text only.
+- Edit flow: the tool reads each file, sniffs the mime type (png/jpeg/gif/webp/bmp), builds a full Data URL (`data:image/{format};base64,…`), and posts it to `/v1/images/edits`. Bad paths, non-images, and more than 5 images are rejected at the tool layer with an error and no network request. The server only accepts PNG/JPEG/WebP, ≤10MB, width/height in [256,4096] px, aspect ratio ≤2:1 (measured) — downsample oversized images client-side first.
+- Output: a PNG written to `<cwd>/.sensenova/` with a `timestamp-slug.png` filename; the tool returns the local path (no expiring URL). Edits report `Image edited and saved to …`, generation `Image generated and saved to …`.
+- Credentials: same `SenseNova Images` `/login` key or `$SENSENOVA_API_KEY`; missing credentials produce an error explaining how to configure.
+- Constants follow the table below (`watermark:false`, `output_format:"png"`, `size:"auto"`, `response_format:"b64_json"`, `n=1`).
 
-## 生图常量与官方可调字段
+## Constants and tunables
 
-本期硬编码（依据 `docs/LLM API 服务平台.md` U1.5 章节）：
+Hardcoded this round (per the U1.5 chapter of `docs/LLM API 服务平台.md`):
 
-| 字段 | 本期值 | 官方默认/说明 |
+| Field | This round | Official default / notes |
 | --- | --- | --- |
-| `watermark` | `false` | 官方默认 `true`（商汤 Logo 水印）；`false` 当前公测免费无水印 |
-| `output_format` | `"png"` | 官方 `png` / `jpeg` / `webp` |
-| `size` | `"auto"` | 官方常量需 32 倍数、512–4096、比例 ≤3:1；`auto` 时 edits 自动适配主图 |
-| `response_format` | `"b64_json"` | 官方 `b64_json` / `url`（`url` 链接 24 小时过期，故用 `b64_json` 直传） |
+| `watermark` | `false` | Official default `true` (SenseNova logo); `false` is currently free in public beta |
+| `output_format` | `"png"` | `png` / `jpeg` / `webp` |
+| `size` | `"auto"` | Explicit constants must be multiples of 32, 512–4096, ratio ≤3:1; `auto` adapts to the main image on edits |
+| `response_format` | `"b64_json"` | `b64_json` / `url` (`url` links expire after 24h, hence the inline base64) |
 
-官方可调但本期不改：`prompt_extend`（默认 `true`，prompt 自动润色）、`n`（仅 `1`）、参考图（`/v1/images/edits` 必带 ≥1 张、至多 5 张）。改这些字段 = 改 `extensions/sensenova-images.ts` 常量。
+Officially tunable but unchanged this round: `prompt_extend` (default `true`, auto-polishes the prompt), `n` (only `1`), reference images (`/v1/images/edits` requires ≥1 input image, at most 5). Changing any of these means editing the constants in `extensions/sensenova-images.ts`.
 
-## chat 模型要点
+## Chat layer notes
 
-- 5 个模型均定义在配置层，字段与官方参数表逐项对齐（`contextWindow` / `maxTokens` / `thinkingLevelMap` / `compat`）。
-- `kimi-k3` 使用 `max_completion_tokens`（模型级 `compat` 覆盖）；其余 4 个用 `max_tokens`。
-- `deepseek-v4-flash` / `deepseek-flash` 开启 `requiresReasoningContentOnAssistantMessages`（官方要求工具轮回传 `reasoning_content`）。
-- `deepseek-v4-flash` 的 `maxTokens` 取 65536（官方「非思考默认 8K／思考默认 64K」的默认档上限；**官方 max 思考档可达 128K**，如需可上调，这不是官方上限）。
-- 思考：`/thinking off` 发送 `reasoning_effort:"none"`；未选档时不发参数、保留官方默认（flash-lite / deepseek-v4 默认 `high`，glm / kimi 默认 `max`）。思考档位按**服务端实测**暴露：flash-lite / deepseek-v4 合法档是 low/medium/high/xhigh/none（**官方文档写 max 是错的，发送 `"max"` 会 400**，其 `max`/`xhigh` 档都映射 `xhigh`）；deepseek-flash 含官方兼容映射档；glm-5.2 含原生 minimal/xhigh；kimi 为 low/medium/high/max/none 且偶发服务端间歇错误（限流/波动，非参数问题）。
+- All 5 models live in the config layer, field-by-field aligned with the official parameter tables (`contextWindow` / `maxTokens` / `thinkingLevelMap` / `compat`).
+- `kimi-k3` sends `max_completion_tokens` (model-level `compat` override); the other 4 send `max_tokens`.
+- `deepseek-v4-flash` and `deepseek-flash` enable `requiresReasoningContentOnAssistantMessages` (the official docs require replaying `reasoning_content` on tool-turn assistant messages).
+- `deepseek-v4-flash` `maxTokens` is 65536 (the non-thinking default tier ceiling; the official max thinking tier goes to 128K — this is not an official cap).
+- Thinking: `/thinking off` sends `reasoning_effort:"none"`; no selection sends no parameter and keeps the official default (flash-lite / deepseek-v4 default `high`, glm / kimi default `max`). Levels are exposed from **server-side measurements**: flash-lite / deepseek-v4 accept low/medium/high/xhigh/none — the official docs say `max`, which is wrong and returns 400, so their `max`/`xhigh` levels both map to `xhigh`. deepseek-flash carries the official compatibility mapping; glm-5.2 has native minimal/xhigh; kimi has low/medium/high/max/none and occasionally throws intermittent server errors (throttling/fluctuation, not a parameter issue).
 
-## 测试
+## Tests
 
 ```sh
 npm test
 # or: node --test test/
 ```
 
-## 验证状态
+Zero-dependency: the test file imports the extension's `.ts` directly with injected fetch/now seams (request construction, response mapping, error paths).
 
-- 已对齐：pi 0.99.1 打包产物（models.json schema、openai-completions 实现、provider 合成）与官方快照（ADR 0001）。
-- **已冒烟（2026-09-30，deepseek-flash 优先、后全矩阵）**：5 个 chat 模型 × 全部思考档位 wire 级验证通过——`reasoning_effort` 档位映射、`max_tokens`/`max_completion_tokens` 字段、`role:"system"`（supportsDeveloperRole:false）、无 `store` 字段（supportsStore:false）、usage/缓存映射、工具调用多轮回传（read 工具）均验证。详见 ADR 0001「档位实测修正」。
-- **结构历史验证（同日）**：多 system 消息 → 折叠为单条（无 400）；`assistant. content:null` 无工具 → 从请求跳过；带思考的 assistant 历史 → 按原 wire 字段名（`reasoning_content`）回传；跨请求工具历史（`tool_calls→tool→toolResult`）完整回传。
-- **生图冒烟（2026-09-30）**：`sensenova_generate_image` 实发请求通过——补录 `SenseNova Images` 凭据后成功生成 2048×1536 PNG（约 3.5MB）落盘 `<cwd>/.sensenova/`；vision 复检确认内容正确、无水印（`watermark:false` 生效）。中文 prompt 文件名 slug 回退为 `image`。
+## Verification status
 
-## 已知待实测项
+- **Aligned**: pi 0.99.1 build artifacts (models.json schema, openai-completions implementation, provider composition) and the official snapshot (ADR 0001).
+- **Smoke-tested (2026-09-30, deepseek-flash first, then the full matrix)**: all 5 chat models × every thinking level verified at the wire level — `reasoning_effort` mapping, `max_tokens`/`max_completion_tokens` fields, `role:"system"` (supportsDeveloperRole:false), no `store` field (supportsStore:false), usage/cache mapping, multi-turn tool-call round-trips (read tool). Details in ADR 0001.
+- **Structural history (same day)**: multiple system messages fold into one (no 400); empty `assistant` (no text, no tools) is skipped; assistant history with thinking is replayed under the original wire field name (`reasoning_content`); cross-request tool history (`tool_calls → tool → toolResult`) round-trips fully.
+- **Image smoke (2026-09-30)**: `sensenova_generate_image` sent real requests — after adding the `SenseNova Images` credentials it generated a 2048×1536 PNG (~3.5MB) into `<cwd>/.sensenova/`; vision re-check confirmed correct content and no watermark (`watermark:false` effective). Non-ASCII prompts fall back to the `image` slug.
 
-- 工具多轮回传与思考字段名出处（官方示例 `reasoning` vs 响应 `reasoning_content`）：流式侧依赖 pi 三字段兼容，以实测为准。
-- kimi-k3「必须原样回传完整 assistant 消息」：现为字段级等价重建，需实测确认。
-- `supportsStore: false` 为保守关闭；若实测服务端接受 `store` 字段可改回 `true`。
-- **edits 实发请求实测（2026-10）**：`image_paths` 图生图通路真实冒烟通过（桌面 7500×5000 JPG 先降采样到 4096 宽，改背景由白昼化复检确认）。服务端实测约束：输入仅接受 PNG/JPEG/WebP，≤10MB，宽高 ∈ [256,4096] px，宽高比 ≤2:1——超限直接返回 400（`invalid images[0].image_url: image should be PNG, JPEG, or WebP, no larger than 10MB, ...`，官方快照未写这些数字），大分辨率图需客户端先降采样；gif/bmp 不在服务端接受列表，未实测。数组上限按官方表「第 1 张为主编辑图，至多 5 张参考图」字面为 6 张，当前按交接确认的 >5 张拦截，仍以实测为准。
+## Known open items
 
-## 环境变量示例
+- Multi-turn tool history and the origin of the thinking field name (official example uses `reasoning`, responses use `reasoning_content`): streaming relies on pi's three-field compatibility; confirm by test.
+- kimi-k3's "replay the exact assistant message" requirement: currently reconstructed field-by-field; needs a live test.
+- `supportsStore: false` is a conservative off; can flip back if a live test shows the server accepts `store`.
+- `/v1/images/edits` live constraints (2026-10): the flow works end-to-end (a 7500×5000 JPG was downsampled to 4096 wide client-side, background day-conversion confirmed by re-check). Server-side measured limits: only PNG/JPEG/WebP, ≤10MB, width/height in [256,4096], ratio ≤2:1 — out-of-range inputs return 400 (`invalid images[0].image_url: image should be PNG, JPEG, or WebP, no larger than 10MB, …`), numbers the official snapshot does not state; gif/bmp are not in the accepted list (not measured). Array cap: the docs table reads "1 main edit image + at most 5 reference images" (=6); the tool currently cuts off above 5 per the handoff; confirm by test.
 
-仓库保护规则不允许直接存放 `.env.example` 文件（示例在此处）：
+## Environment variable example
+
+The repo's protection rules forbid committing a `.env.example` file, so the example lives here:
 
 ```sh
 export SENSENOVA_API_KEY=sk-...
