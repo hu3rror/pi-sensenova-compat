@@ -9,6 +9,7 @@
     "sensenova",
     "image-generation"
   ],
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/hu3rror/pi-sensenova-compat.git"
