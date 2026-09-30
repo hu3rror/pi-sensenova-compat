@@ -9,22 +9,33 @@
 
 ## 交付物
 
-| 文件 | 说明 |
-| --- | --- |
-| `sensenova.models.json` | chat 层配置片段，合并进 pi 的 `models.json` |
-| `sensenova-images.ts` | 生图扩展（U1.5 Lite / Fast）：注册 provider `sensenova-images`，并注册对话内工具 `sensenova_generate_image` |
-| `sensenova-images.test.mjs` | 主 seam 单元测试（请求构造 / 响应映射 / 错误路径） |
-| 本 README | 安装、认证、常量与验证说明 |
+本仓库即一个 [pi 包](https://pi.dev)（`pi-package`），标准布局：
+
+```text
+pi-sensenova-compat/
+├── package.json              # 包清单：pi.extensions 显式声明扩展 + pi-package keyword
+├── extensions/
+│   └── sensenova-images.ts    # 扩展层（provider `sensenova-images`）+ 工具 `sensenova_generate_image`
+├── test/
+│   └── sensenova-images.test.mjs  # 主 seam 单元测试（请求构造 / 响应映射 / 错误路径）
+├── sensenova.models.json      # chat 层配置片段（非包资源，手动合并）
+├── docs/                      # ADR / issue-tracker / 官方文档快照
+└── README.md                  # 安装、认证、常量与验证说明
+```
 
 ## 要求
 
 - **pi 0.99.1**（所有 schema 与行为依据本地 0.99.1 打包产物验证；不采用未在本地 schema 出现的字段）
-- Node ≥ 20（仅运行测试需要）
+- Node ≥ 22.18（类型剥离直跑 `.ts` 测试；仅运行测试需要）
 
 ## 安装
 
 1. **合并配置**：把 `sensenova.models.json` 中 `providers.sensenova` 合入 `~/.pi/agent/models.json`（若文件不存在则复制整文件）。
-2. **安装扩展**：复制 `sensenova-images.ts` 到 `~/.pi/agent/extensions/`（pi 扩展自动发现只认 `.ts`/`.js` 文件）。若旧版 `sensenova-u1.ts` 仍在，删除它（旧工具 `sensenova_draw_infographic` 已废弃：模型 id `sensenova-u1-fast` 早已下线，返回 1 小时过期 URL 且不落盘）。
+2. **安装 pi 包**（三选一）：
+   - 本地目录（开发期）：`pi install C:/Users/Hue/Repos/pi-sensenova-compat`（相对路径从 settings 文件所在目录解析，建议用绝对路径）或 `pi -e ./` 单次试跑；
+   - git：`pi install git:github.com/hu3rror/pi-sensenova-compat`；
+   - npm（发布后）：`pi install npm:pi-sensenova`。
+   手动兜底：把 `extensions/sensenova-images.ts` 复制到 `~/.pi/agent/extensions/`（pi 扩展自动发现只认 `.ts`/`.js` 文件）。若旧版 `sensenova-u1.ts` 仍在，删除它（旧工具 `sensenova_draw_infographic` 已废弃：模型 id `sensenova-u1-fast` 早已下线，返回 1 小时过期 URL 且不落盘）。
 3. **认证**（二选一）：
    - `/login`：先后录入两个 provider 的密钥——`SenseNova`（chat）与 `SenseNova Images`（生图），同一个 key 即可；
    - 或设环境变量 `SENSENOVA_API_KEY`（两 provider 共用）。
@@ -51,7 +62,7 @@
 | `size` | `"auto"` | 官方常量需 32 倍数、512–4096、比例 ≤3:1；`auto` 时 edits 自动适配主图 |
 | `response_format` | `"b64_json"` | 官方 `b64_json` / `url`（`url` 链接 24 小时过期，故用 `b64_json` 直传） |
 
-官方可调但本期不改：`prompt_extend`（默认 `true`，prompt 自动润色）、`n`（仅 `1`）、参考图（`/v1/images/edits` 必带 ≥1 张、至多 5 张）。改这些字段 = 改 `sensenova-images.ts` 常量。
+官方可调但本期不改：`prompt_extend`（默认 `true`，prompt 自动润色）、`n`（仅 `1`）、参考图（`/v1/images/edits` 必带 ≥1 张、至多 5 张）。改这些字段 = 改 `extensions/sensenova-images.ts` 常量。
 
 ## chat 模型要点
 
@@ -64,7 +75,8 @@
 ## 测试
 
 ```sh
-node --test sensenova-images.test.mjs
+npm test
+# or: node --test test/
 ```
 
 ## 验证状态

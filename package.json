@@ -1,0 +1,30 @@
+{
+  "name": "pi-sensenova",
+  "version": "0.1.0",
+  "description": "SenseNova (TokenPlan) image generation and editing for pi: U-series models via a thin extension",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi extension",
+    "sensenova",
+    "image-generation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hu3rror/pi-sensenova-compat.git"
+  },
+  "files": [
+    "extensions/"
+  ],
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/sensenova-images.ts"
+    ]
+  }
+}
