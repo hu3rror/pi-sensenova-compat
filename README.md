@@ -1,4 +1,4 @@
-# pi-sensenova
+# pi-sensenova-compat
 
 [简体中文](README.zh-CN.md)
 
@@ -41,7 +41,7 @@ pi-sensenova-compat/
 2. **Install the package** (pick one):
    - Local path (development): `pi install C:/path/to/pi-sensenova-compat` (relative paths resolve from the settings file's directory, so use an absolute path), or `pi -e ./` for a one-shot run.
    - Git: `pi install git:github.com/hu3rror/pi-sensenova-compat`.
-   - npm (after publishing): `pi install npm:pi-sensenova`.
+   - npm (after publishing): `pi install npm:pi-sensenova-compat`.
    - Manual fallback: copy `extensions/sensenova-images.ts` to `~/.pi/agent/extensions/` (pi discovers `.ts`/`.js` files). If an old `sensenova-u1.ts` is still present, delete it: the retired `sensenova_draw_infographic` tool targets the offline `sensenova-u1-fast` model id and returns 1-hour-expiring URLs without saving files.
 3. **Authenticate** (either):
    - `/login`, entering the key twice: provider `SenseNova` (chat) and provider `SenseNova Images` (image), same key is fine.

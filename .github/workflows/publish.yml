@@ -1,0 +1,49 @@
+# npm 发布工作流(Trusted Publisher / OIDC,零 token)
+# 模式 A(暂存流,维护者 2FA 放行):CI 只 stage,approve 在维护者本地。
+# 前置:npmjs.com 已为包配置 Trusted Publisher,绑定本仓库 + 本 workflow 文件名
+# (publish.yml)。首发(v0.1.0)由维护者本地 npm publish,随后绑定 TP,此后再走本流。
+name: publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # Trusted Publishing(OIDC)必需;同时自动生成 provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24 # npm stage 需 npm 11+(Node 24 自带)
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm install # 仓库无 package-lock.json,不能 npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Verify tag matches package.json version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag v${tag} does not match package.json version ${version}"
+            exit 1
+          fi
+
+      # 模式 A:暂存(不直接发布;stage-id 在日志中,维护者本地 approve)
+      - name: Stage package on npm registry
+        run: npm stage publish --provenance
+
+      # 模式 B:直接发布(全自动)——本项目未采用,见 AGENTS.md 发布约定。
+      # - name: Publish to npm registry
+      #   run: npm publish --provenance

@@ -1,5 +1,5 @@
 {
-  "name": "pi-sensenova",
+  "name": "pi-sensenova-compat",
   "version": "0.1.0",
   "description": "SenseNova (TokenPlan) image generation and editing for pi: U-series models via a thin extension",
   "type": "module",

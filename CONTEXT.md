@@ -43,3 +43,7 @@ _Avoid_: 官方映射表（口语）
 **生图常量**:
 `watermark:false`、`output_format:"png"`、`size:"auto"`、`response_format:"b64_json"`。本期硬编码，README 保留官方默认与可调字段说明。
 _Avoid_: 默认水印（指 `watermark:true`）
+
+**发布流**:
+push `v*` tag 触发 `.github/workflows/publish.yml`（Trusted Publisher / OIDC，零 token），暂存流——CI 只 `npm stage publish`，维护者本地 `npm stage approve <stage-id>`（需 2FA）真正发布；回滚 `npm stage reject`。首发（包尚未存在于 registry）由维护者本地 `npm publish` 后绑定 Trusted Publisher，CI 自下一版本启用。
+_Avoid_: 直接发布流（模式 B）、token 认证（误把 npm token 放进 CI）

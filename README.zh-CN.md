@@ -1,4 +1,4 @@
-# pi-sensenova
+# pi-sensenova-compat
 
 [English](README.md)
 
@@ -41,7 +41,7 @@ pi-sensenova-compat/
 2. **安装 pi 包**（三选一）：
    - 本地目录（开发期）：`pi install C:/绝对/路径/pi-sensenova-compat`（相对路径从 settings 文件所在目录解析，建议用绝对路径），或 `pi -e ./` 单次试跑；
    - git：`pi install git:github.com/hu3rror/pi-sensenova-compat`；
-   - npm（发布后）：`pi install npm:pi-sensenova`。
+   - npm（发布后）：`pi install npm:pi-sensenova-compat`。
    手动兜底：把 `extensions/sensenova-images.ts` 复制到 `~/.pi/agent/extensions/`（pi 扩展自动发现只认 `.ts`/`.js` 文件）。若旧版 `sensenova-u1.ts` 仍在，删除它（废弃工具 `sensenova_draw_infographic` 对应已下线的 `sensenova-u1-fast` 模型 id，返回 1 小时过期 URL 且不落盘）。
 3. **认证**（二选一）：
    - `/login`：先后录入 `SenseNova`（chat）与 `SenseNova Images`（图像）两个 provider 的密钥，同一个 key 即可；
