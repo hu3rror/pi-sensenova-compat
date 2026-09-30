@@ -12,6 +12,8 @@ export const TINY_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 
 export const TINY_WEBP = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBP"), Buffer.alloc(8)]);
 export const TINY_GIF = Buffer.from("GIF89a".padEnd(16, "\0"));
 
+export const NOW = new Date(2026, 8, 30, 10, 15, 30);
+
 export async function withTempCwd(run) {
 	const cwd = await mkdtemp(join(tmpdir(), "sensenova-test-"));
 	try {

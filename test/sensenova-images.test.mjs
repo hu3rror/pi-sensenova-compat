@@ -7,6 +7,7 @@ import {
 	BASE_URL,
 	fetchRecorder,
 	makeModel,
+	NOW,
 	okResponse,
 	TINY_GIF,
 	TINY_JPEG,
@@ -129,8 +130,6 @@ test("missing prompt becomes an error result without a network call", async () =
 });
 
 // --- sensenova_generate_image tool ---
-
-const NOW = new Date(2026, 8, 30, 10, 15, 30);
 
 function toolContext({ model = makeModel("sensenova-u1.5-fast"), apiKey = "sk-test", cwd }) {
 	return {

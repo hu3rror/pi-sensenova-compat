@@ -7,6 +7,7 @@ import {
 	BASE_URL,
 	fetchRecorder,
 	makeModel,
+	NOW,
 	okResponse,
 	TINY_JPEG,
 	TINY_PNG,
@@ -405,6 +406,12 @@ test("completeImageCommand completes settings keys with the full replacement tex
 	]);
 });
 
+test("completeImageCommand completes the reset action after settings", () => {
+	assert.deepEqual(completeImageCommand("settings r").map((i) => ({ label: i.label, value: i.value })), [
+		{ label: "reset", value: "settings reset " },
+	]);
+});
+
 test("completeImageCommand completes settings values", () => {
 	assert.deepEqual(completeImageCommand("settings model sensenova-u1.5-l").map((i) => i.value), [
 		"settings model sensenova-u1.5-lite",
@@ -424,7 +431,7 @@ test("completeImageCommand returns null where no completion applies", () => {
 
 // --- resolveImageConfig ---
 
-test("resolveImageConfig applies constants < config < explicit precedence", () => {
+test("resolveImageConfig applies config over constants", () => {
 	const base = resolveImageConfig({});
 	assert.deepEqual(base, { n: 1, size: "auto", watermark: false, output_format: "png", response_format: "b64_json" });
 
@@ -432,14 +439,11 @@ test("resolveImageConfig applies constants < config < explicit precedence", () =
 	assert.equal(withConfig.size, "1024x1024");
 	assert.equal(withConfig.watermark, true);
 	assert.equal(withConfig.output_format, "jpeg");
-
-	const withExplicit = resolveImageConfig({ size: "1024x1024" }, { size: "2048x2048" });
-	assert.equal(withExplicit.size, "2048x2048");
 });
 
-// --- /sensenova-image command handler ---
+// The explicit-over-config precedence for model is covered by "command --model flag overrides the saved config model".
 
-const NOW = new Date(2026, 8, 30, 10, 15, 30);
+// --- /sensenova-image command handler ---
 
 function fakeContext({ cwd, model = makeModel(), apiKey = "sk-test" }) {
 	const notify = [];

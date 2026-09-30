@@ -43,12 +43,12 @@ const OUTPUT_FORMATS = ["png", "jpeg", "webp"];
 const MIME_SNIFF_BYTES = 4100;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
-export function resolveImageConfig(config = {}, explicit = {}) {
+export function resolveImageConfig(config = {}) {
 	return {
 		n: IMAGE_CONSTANTS.n,
-		size: explicit.size ?? config.size ?? IMAGE_CONSTANTS.size,
-		watermark: explicit.watermark ?? config.watermark ?? IMAGE_CONSTANTS.watermark,
-		output_format: explicit.output_format ?? config.output_format ?? IMAGE_CONSTANTS.output_format,
+		size: config.size ?? IMAGE_CONSTANTS.size,
+		watermark: config.watermark ?? IMAGE_CONSTANTS.watermark,
+		output_format: config.output_format ?? IMAGE_CONSTANTS.output_format,
 		response_format: IMAGE_CONSTANTS.response_format,
 	};
 }
@@ -440,7 +440,6 @@ export async function loadImageConfig(configPath) {
 	return validateImageConfig(raw);
 }
 
-/** Validate then atomically replace the config file (temp file + rename, parent dirs created). */
 export async function writeImageConfig(configPath, config) {
 	const validated = validateImageConfig(config);
 	if (!validated.ok) return validated;
@@ -507,7 +506,6 @@ export function tokenizeArgs(args) {
 	return tokens;
 }
 
-/** Parse /sensenova-image arguments into gen / edit / settings actions, or an error. */
 export function parseImageCommand(args, cwd) {
 	const { model, rest: tokens, error } = extractModelFlag(tokenizeArgs(args));
 	if (error) return { kind: "error", error };
@@ -620,7 +618,7 @@ export function completeImageCommand(prefix) {
 	}
 	if (atTokenStart) {
 		if (first === "settings" && rest.length === 0) {
-			return CONFIG_KEYS.map((key) => ({ value: `settings ${key} `, label: key }));
+			return SETTING_ARGS.map((key) => ({ value: `settings ${key} `, label: key }));
 		}
 		if (first === "settings" && rest.length === 1) {
 			return completeSettingValue(rest[0], "");
@@ -636,7 +634,7 @@ export function completeImageCommand(prefix) {
 		return items.length > 0 ? items : null;
 	}
 	if (first === "settings" && rest.length === 1) {
-		const items = CONFIG_KEYS.filter((key) => key.startsWith(rest[0])).map((key) => ({
+		const items = SETTING_ARGS.filter((key) => key.startsWith(rest[0])).map((key) => ({
 			value: `settings ${key} `,
 			label: key,
 		}));
@@ -662,6 +660,8 @@ function completeSettingValue(key, prefix) {
 	return items.length > 0 ? items : null;
 }
 
+const SETTING_ARGS = [...CONFIG_KEYS, "reset"];
+
 // --- /sensenova-image command ---
 
 async function resolveModelAndAuth(ctx, modelId) {
@@ -676,7 +676,7 @@ async function resolveModelAndAuth(ctx, modelId) {
 	return { model, apiKey: auth.apiKey };
 }
 
-// Shared by the chat tool and the command: load config, resolve model/auth, run the request, save the image.
+// Shared by the chat tool and the command.
 async function runImageGeneration(ctx, { prompt, imagePaths, explicitModel, configPath, fetch, now, signal, onStart }) {
 	const loaded = await loadImageConfig(configPath);
 	const config = loaded.ok ? loaded.config : {};
