@@ -111,7 +111,7 @@ Zero-dependency: the test file imports the extension's `.ts` directly with injec
 
 ## Docs
 
-- Architecture and tradeoffs: `docs/adr/0001-sensenova-integration-architecture.md`, `docs/adr/0002-pi-package-layout.md`, `docs/adr/0003-sensenova-image-command-and-config.md`
+- Architecture and tradeoffs: `docs/adr/0001-sensenova-integration-architecture.md`, `docs/adr/0002-pi-package-layout.md`, `docs/adr/0003-sensenova-image-command-and-config.md`, `docs/adr/0004-pi-1.0.2-revalidation.md`
 - Domain glossary (中文术语表): `GLOSSARY.md`
 - Spec: GitHub issues #1, #2
 - Official API snapshot: `docs/LLM API 服务平台.md`

@@ -111,7 +111,7 @@ npm test
 
 ## 文档
 
-- 架构与取舍：`docs/adr/0001-sensenova-integration-architecture.md`、`docs/adr/0002-pi-package-layout.md`、`docs/adr/0003-sensenova-image-command-and-config.md`
+- 架构与取舍：`docs/adr/0001-sensenova-integration-architecture.md`、`docs/adr/0002-pi-package-layout.md`、`docs/adr/0003-sensenova-image-command-and-config.md`、`docs/adr/0004-pi-1.0.2-revalidation.md`
 - 域术语：`GLOSSARY.md`
 - 规格：GitHub issue #1、#2
 - 官方文档快照：`docs/LLM API 服务平台.md`
