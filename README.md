@@ -58,6 +58,7 @@ Saved defaults live in `~/.pi/agent/extensions/sensenova-compat.json` (agent dir
 | `output_format` | `png` (default) / `jpeg` / `webp` |
 | `watermark` | `true` / `false` (default) |
 | `output_dir` | relative to cwd (default `.sensenova`) or absolute |
+| `image_in_result` | `true` / `false` (default) | Include the generated image as an image block in the chat tool result. Terminals with inline-image support (kitty/iTerm2 protocols) render it in the conversation; the block also enters the model context and adds input tokens on vision models, so it defaults to off and the tool returns only the saved path. |
 
 They apply to the chat tool as well. The file never holds credentials (auth stays on `/login` or `$SENSENOVA_API_KEY`).
 
@@ -70,7 +71,7 @@ The extension registers the **`sensenova_generate_image`** tool: the agent calls
   - `model` (optional): `sensenova-u1.5-fast` (default, quicker) or `sensenova-u1.5-lite` (higher quality).
   - `image_paths` (optional): local image paths, absolute or relative to the cwd. Passing 1+ paths switches to `/v1/images/edits`: the first image is the main edit target, at most 5 images. Omitting it generates from text only.
 - Edit flow: the tool reads each file, sniffs the mime type (png/jpeg/gif/webp/bmp), builds a full Data URL (`data:image/{format};base64,…`), and posts it to `/v1/images/edits`. Bad paths, non-images, and more than 5 images are rejected at the tool layer with an error and no network request. The server accepts PNG/JPEG/WebP, ≤10MB, width/height in [256,4096] px, aspect ratio ≤2:1 — downsample oversized images client-side first.
-- Output: a PNG written to `<cwd>/.sensenova/` with a `timestamp-slug.png` filename; the tool returns the local path (no expiring URL). Edits report `Image edited and saved to …`, generation `Image generated and saved to …`.
+- Output: a PNG written to `<cwd>/.sensenova/` with a `timestamp-slug.png` filename; the tool returns the local path (no expiring URL). Edits report `Image edited and saved to …`, generation `Image generated and saved to …`. With `image_in_result: true` the tool additionally returns the image as an image block, which inline-image terminals render in the conversation (see [Slash command](#slash-command)).
 - Credentials: same `SenseNova Images` `/login` key or `$SENSENOVA_API_KEY`; missing credentials produce an error explaining how to configure.
 
 ## Repository layout
@@ -99,7 +100,7 @@ pi-sensenova-compat/
 | `size` | `"auto"` | Explicit constants must be multiples of 32, 512–4096, ratio ≤3:1; `auto` adapts to the main image on edits |
 | `response_format` | `"b64_json"` | `b64_json` / `url` (`url` links expire after 24h, hence the inline base64) |
 
-These are the **defaults**; `watermark`, `output_format`, and `size` can be overridden per user via `settings` (see [Slash command](#slash-command)), as can `model` and `output_dir`. Officially tunable but unchanged: `prompt_extend` (default `true`, auto-polishes the prompt), `n` (only `1`), reference images (`/v1/images/edits` requires ≥1 input image, at most 5). Changing these means editing the constants in `extensions/sensenova-images.ts`.
+These are the **defaults**; `watermark`, `output_format`, `size`, and `image_in_result` can be overridden per user via `settings` (see [Slash command](#slash-command)), as can `model` and `output_dir`. Officially tunable but unchanged: `prompt_extend` (default `true`, auto-polishes the prompt), `n` (only `1`), reference images (`/v1/images/edits` requires ≥1 input image, at most 5). Changing these means editing the constants in `extensions/sensenova-images.ts`.
 
 ## Tests
 

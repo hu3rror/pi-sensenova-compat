@@ -12,6 +12,10 @@ const IMAGE_CONSTANTS = {
 	watermark: false,
 	output_format: "png",
 	response_format: "b64_json",
+	// Whether the chat tool includes the generated image as an image block in its result.
+	// Rendering is terminal-dependent (kitty/iTerm2 only), but the block also enters the
+	// model context on vision models, so it stays off by default.
+	image_in_result: false,
 };
 
 const ERROR_PREFIX = "SenseNova Images: ";
@@ -27,7 +31,7 @@ const MAX_EDIT_IMAGES = 5;
 
 // User-level command configuration (agent dir / extensions / sensenova-compat.json).
 const CONFIG_FILE_NAME = "sensenova-compat.json";
-const CONFIG_KEYS = ["model", "size", "output_format", "watermark", "output_dir"];
+const CONFIG_KEYS = ["model", "size", "output_format", "watermark", "output_dir", "image_in_result"];
 const SUBCOMMANDS = ["gen", "edit", "settings"];
 const SUBCOMMAND_DESCRIPTIONS = {
 	gen: "text-to-image",
@@ -50,6 +54,7 @@ export function resolveImageConfig(config = {}) {
 		watermark: config.watermark ?? IMAGE_CONSTANTS.watermark,
 		output_format: config.output_format ?? IMAGE_CONSTANTS.output_format,
 		response_format: IMAGE_CONSTANTS.response_format,
+		image_in_result: config.image_in_result ?? IMAGE_CONSTANTS.image_in_result,
 	};
 }
 
@@ -358,13 +363,17 @@ export function createGenerateImageTool(options = {}) {
 				return toolError(run.message);
 			}
 			const configWarning = run.configError ? ` (${run.configError}; using defaults)` : "";
+			const content = [
+				{
+					type: "text",
+					text: `Image ${imagePaths.length > 0 ? "edited" : "generated"} and saved to ${run.filePath}${configWarning}`,
+				},
+			];
+			if (run.imageInResult && run.imageData && run.imageMimeType) {
+				content.push({ type: "image", mimeType: run.imageMimeType, data: run.imageData });
+			}
 			return {
-				content: [
-					{
-						type: "text",
-						text: `Image ${imagePaths.length > 0 ? "edited" : "generated"} and saved to ${run.filePath}${configWarning}`,
-					},
-				],
+				content,
 				details: { model: run.modelId, path: run.filePath },
 			};
 		},
@@ -423,6 +432,10 @@ function normalizeConfigValue(key, value) {
 			if (typeof value === "boolean") return { ok: true, value };
 			if (value === "true" || value === "false") return { ok: true, value: value === "true" };
 			return { ok: false, error: "watermark must be true or false" };
+		case "image_in_result":
+			if (typeof value === "boolean") return { ok: true, value };
+			if (value === "true" || value === "false") return { ok: true, value: value === "true" };
+			return { ok: false, error: "image_in_result must be true or false" };
 		case "output_dir":
 			if (typeof value !== "string" || value.trim().length === 0) {
 				return { ok: false, error: "output_dir must be a non-empty path" };
@@ -721,7 +734,15 @@ async function runImageGeneration(ctx, { prompt, imagePaths, explicitModel, conf
 			imageConfig.output_format,
 			config.output_dir ?? IMAGE_DIR_NAME,
 		);
-		return { status: "ok", modelId, filePath, configError: loaded.ok ? null : loaded.error };
+		return {
+			status: "ok",
+			modelId,
+			filePath,
+			configError: loaded.ok ? null : loaded.error,
+			imageInResult: imageConfig.image_in_result,
+			imageData: image.data,
+			imageMimeType: image.mimeType,
+		};
 	} catch (error) {
 		return { status: "error", message: `failed to save image: ${error instanceof Error ? error.message : String(error)}` };
 	}
@@ -787,11 +808,12 @@ async function handleSettings(parsed, configPath, ctx) {
 		};
 		const lines = [
 			"SenseNova image defaults (effective):",
-			`  model:         ${display("model", DEFAULT_MODEL)}`,
-			`  size:          ${display("size", IMAGE_CONSTANTS.size)}`,
-			`  output_format: ${display("output_format", IMAGE_CONSTANTS.output_format)}`,
-			`  watermark:     ${display("watermark", IMAGE_CONSTANTS.watermark)}`,
-			`  output_dir:    ${display("output_dir", IMAGE_DIR_NAME)}`,
+			`  model:           ${display("model", DEFAULT_MODEL)}`,
+			`  size:            ${display("size", IMAGE_CONSTANTS.size)}`,
+			`  output_format:   ${display("output_format", IMAGE_CONSTANTS.output_format)}`,
+			`  watermark:       ${display("watermark", IMAGE_CONSTANTS.watermark)}`,
+			`  output_dir:      ${display("output_dir", IMAGE_DIR_NAME)}`,
+			`  image_in_result: ${display("image_in_result", IMAGE_CONSTANTS.image_in_result)}`,
 			`Config file: ${configPath}`,
 		];
 		if (!loaded.ok) lines.push(`${loaded.error} — using defaults`);

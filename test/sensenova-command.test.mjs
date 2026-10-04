@@ -228,6 +228,15 @@ test("settings output_dir accepts a quoted multi-word value", () => {
 	});
 });
 
+test("settings image_in_result is a set action", () => {
+	assert.deepEqual(parseImageCommand("settings image_in_result true", "C:/work"), {
+		kind: "settings",
+		action: "set",
+		key: "image_in_result",
+		value: "true",
+	});
+});
+
 test("settings reset is a reset action and rejects extra tokens", () => {
 	assert.deepEqual(parseImageCommand("settings reset", "C:/work"), { kind: "settings", action: "reset" });
 	const extra = parseImageCommand("settings reset now", "C:/work");
@@ -257,6 +266,7 @@ test("validateImageConfig accepts a full valid config", () => {
 		output_format: "jpeg",
 		watermark: true,
 		output_dir: "images",
+		image_in_result: true,
 	});
 	assert.equal(result.ok, true);
 	assert.deepEqual(result.config, {
@@ -265,6 +275,7 @@ test("validateImageConfig accepts a full valid config", () => {
 		output_format: "jpeg",
 		watermark: true,
 		output_dir: "images",
+		image_in_result: true,
 	});
 });
 
@@ -280,7 +291,7 @@ test("validateImageConfig rejects unknown keys", () => {
 	assert.match(result.error, /unknown config key "n"/);
 });
 
-test("validateImageConfig rejects invalid models, sizes, formats, watermarks, and output_dir", () => {
+test("validateImageConfig rejects invalid models, sizes, formats, watermarks, image_in_result, and output_dir", () => {
 	assert.equal(validateImageConfig({ model: "gpt-4" }).ok, false);
 	assert.equal(validateImageConfig({ model: "sensenova-u1.5-fast" }).ok, true);
 
@@ -296,6 +307,10 @@ test("validateImageConfig rejects invalid models, sizes, formats, watermarks, an
 	assert.equal(validateImageConfig({ watermark: false }).ok, true);
 	assert.equal(validateImageConfig({ watermark: "false" }).ok, true);
 	assert.equal(validateImageConfig({ watermark: "yes" }).ok, false);
+
+	assert.equal(validateImageConfig({ image_in_result: true }).ok, true);
+	assert.equal(validateImageConfig({ image_in_result: "true" }).ok, true);
+	assert.equal(validateImageConfig({ image_in_result: "yes" }).ok, false);
 
 	assert.equal(validateImageConfig({ output_dir: "img" }).ok, true);
 	assert.equal(validateImageConfig({ output_dir: "" }).ok, false);
@@ -433,12 +448,20 @@ test("completeImageCommand returns null where no completion applies", () => {
 
 test("resolveImageConfig applies config over constants", () => {
 	const base = resolveImageConfig({});
-	assert.deepEqual(base, { n: 1, size: "auto", watermark: false, output_format: "png", response_format: "b64_json" });
+	assert.deepEqual(base, {
+		n: 1,
+		size: "auto",
+		watermark: false,
+		output_format: "png",
+		response_format: "b64_json",
+		image_in_result: false,
+	});
 
-	const withConfig = resolveImageConfig({ size: "1024x1024", watermark: true, output_format: "jpeg" });
+	const withConfig = resolveImageConfig({ size: "1024x1024", watermark: true, output_format: "jpeg", image_in_result: true });
 	assert.equal(withConfig.size, "1024x1024");
 	assert.equal(withConfig.watermark, true);
 	assert.equal(withConfig.output_format, "jpeg");
+	assert.equal(withConfig.image_in_result, true);
 });
 
 // The explicit-over-config precedence for model is covered by "command --model flag overrides the saved config model".

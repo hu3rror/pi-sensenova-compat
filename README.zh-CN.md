@@ -58,6 +58,7 @@ chat 思考档位注意：官方文档对 `sensenova-6.8-flash-lite` / `deepseek
 | `output_format` | `png`（默认）/ `jpeg` / `webp` |
 | `watermark` | `true` / `false`（默认） |
 | `output_dir` | 相对 cwd（默认 `.sensenova`）或绝对路径 |
+| `image_in_result` | `true` / `false`（默认） | 是否把生成图作为图片块附到对话内工具结果。支持内联图片的终端（kitty/iTerm2 协议）会在对话里直接显示；同时该图片块会进入模型上下文，在视觉模型上增加输入 token，因此默认关闭，工具只返回保存路径。 |
 
 这些同样作用于对话内工具。配置文件不含凭据（认证仍走 `/login` 或 `$SENSENOVA_API_KEY`）。
 
@@ -70,7 +71,7 @@ chat 思考档位注意：官方文档对 `sensenova-6.8-flash-lite` / `deepseek
   - `model`（可选）：`sensenova-u1.5-fast`（默认，较快）或 `sensenova-u1.5-lite`（更高质量）。
   - `image_paths`（可选）：本地图片路径数组，绝对路径或相对 cwd；带 1 张以上即走 `/v1/images/edits` 图生图，第 1 张为主编辑图、至多 5 张；省略则纯文生图。
 - 图生图流程：工具读取各文件 → 按文件头嗅探 mime（png/jpeg/gif/webp/bmp）→ 拼完整 Data URL（`data:image/{format};base64,…`）→ 发 `/v1/images/edits`。坏路径/非图片/超 5 张在工具层拦截，返回错误且不发网络请求。服务端接受 PNG/JPEG/WebP、≤10MB、宽高 [256,4096] px、比例 ≤2:1，超分辨率图需客户端先降采样。
-- 产物：PNG 写入 `<cwd>/.sensenova/`，文件名 `时间戳-描述slug.png`；工具返回本地路径（不用会过期的 URL）。图生图返回 `Image edited and saved to …`，文生图返回 `Image generated and saved to …`。
+- 产物：PNG 写入 `<cwd>/.sensenova/`，文件名 `时间戳-描述slug.png`；工具返回本地路径（不用会过期的 URL）。图生图返回 `Image edited and saved to …`，文生图返回 `Image generated and saved to …`。开启 `image_in_result: true` 时，工具额外把图片作为图片块返回，支持内联图片的终端会在对话中直接渲染（见[斜杠命令](#斜杠命令)）。
 - 凭据：与 provider 共用 `SenseNova Images` 的 `/login` 密钥或 `$SENSENOVA_API_KEY`；缺凭据时返回错误并说明配置方法。
 
 ## 仓库结构
@@ -99,7 +100,7 @@ pi-sensenova-compat/
 | `size` | `"auto"` | 显式常量需 32 的倍数、512–4096、比例 ≤3:1；`auto` 时 edits 自动适配主图 |
 | `response_format` | `"b64_json"` | `b64_json` / `url`（`url` 链接 24 小时过期，故用 `b64_json` 直传） |
 
-以上是**默认值**；`watermark` / `output_format` / `size` 可经 `settings` 按用户覆盖（见[斜杠命令](#斜杠命令)），`model` / `output_dir` 同理。官方可调但本期不改：`prompt_extend`（默认 `true`，自动润色 prompt）、`n`（仅 `1`）、参考图（`/v1/images/edits` 必带 ≥1 张、至多 5 张）。改这些字段 = 改 `extensions/sensenova-images.ts` 常量。
+以上是**默认值**；`watermark` / `output_format` / `size` / `image_in_result` 可经 `settings` 按用户覆盖（见[斜杠命令](#斜杠命令)），`model` / `output_dir` 同理。官方可调但本期不改：`prompt_extend`（默认 `true`，自动润色 prompt）、`n`（仅 `1`）、参考图（`/v1/images/edits` 必带 ≥1 张、至多 5 张）。改这些字段 = 改 `extensions/sensenova-images.ts` 常量。
 
 ## 测试
 

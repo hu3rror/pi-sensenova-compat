@@ -155,6 +155,7 @@ test("tool generates with the default model and saves the PNG under .sensenova/"
 		assert.equal(result.details.model, "sensenova-u1.5-fast");
 		const expectedPath = join(cwd, ".sensenova", "20260930-101530-000-a-white-seal.png");
 		assert.equal(result.details.path, expectedPath);
+		assert.equal(result.content.length, 1); // image_in_result defaults to off: text only
 		assert.equal(result.content[0].text, `Image generated and saved to ${expectedPath}`);
 
 		const written = await readFile(expectedPath);
@@ -165,6 +166,33 @@ test("tool generates with the default model and saves the PNG under .sensenova/"
 		assert.equal(body.model, "sensenova-u1.5-fast");
 		assert.equal(body.prompt, "a white seal");
 		assert.equal(calls[0].init.headers.Authorization, "Bearer sk-test");
+	});
+});
+
+test("tool includes the image block when image_in_result is enabled", async () => {
+	const { impl } = fetchRecorder(okResponse());
+	await withTempCwd(async (cwd) => {
+		const configPath = join(cwd, "sensenova-compat.json");
+		await writeFile(configPath, JSON.stringify({ image_in_result: true }), "utf8");
+		const tool = makeTool(impl, configPath);
+		const result = await tool.execute("call-1", { prompt: "a white seal" }, undefined, undefined, toolContext({ cwd }));
+
+		assert.equal(result.content.length, 2);
+		assert.equal(result.content[0].type, "text");
+		assert.deepEqual(result.content[1], { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" });
+	});
+});
+
+test("tool omits the image block when image_in_result is explicitly false", async () => {
+	const { impl } = fetchRecorder(okResponse());
+	await withTempCwd(async (cwd) => {
+		const configPath = join(cwd, "sensenova-compat.json");
+		await writeFile(configPath, JSON.stringify({ image_in_result: false }), "utf8");
+		const tool = makeTool(impl, configPath);
+		const result = await tool.execute("call-1", { prompt: "a white seal" }, undefined, undefined, toolContext({ cwd }));
+
+		assert.equal(result.content.length, 1);
+		assert.equal(result.content[0].type, "text");
 	});
 });
 
