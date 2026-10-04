@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	abortException,
@@ -183,6 +183,34 @@ test("tool honors an explicit model parameter", async () => {
 		assert.equal(result.details.model, "sensenova-u1.5-lite");
 		const body = JSON.parse(calls[0].init.body);
 		assert.equal(body.model, "sensenova-u1.5-lite");
+	});
+});
+
+test("tool does not overwrite on same-ms same-prompt calls: distinct files with a numeric suffix", async () => {
+	const { impl } = fetchRecorder(okResponse());
+	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
+		const first = await tool.execute("call-1", { prompt: "a white seal" }, undefined, undefined, toolContext({ cwd }));
+		const second = await tool.execute("call-2", { prompt: "a white seal" }, undefined, undefined, toolContext({ cwd }));
+
+		const files = await readdir(join(cwd, ".sensenova"));
+		assert.equal(files.length, 2);
+		assert.equal(first.details.path, join(cwd, ".sensenova", "20260930-101530-000-a-white-seal.png"));
+		assert.equal(second.details.path, join(cwd, ".sensenova", "20260930-101530-000-a-white-seal-2.png"));
+	});
+});
+
+test("tool does not overwrite under concurrent calls racing for the same path", async () => {
+	const { impl } = fetchRecorder(okResponse());
+	await withTempCwd(async (cwd) => {
+		const tool = makeTool(impl, join(cwd, "sensenova-compat.json"));
+		const results = await Promise.all(
+			Array.from({ length: 4 }, (_v, i) => tool.execute(`call-${i}`, { prompt: "a white seal" }, undefined, undefined, toolContext({ cwd }))),
+		);
+
+		const files = await readdir(join(cwd, ".sensenova"));
+		assert.equal(files.length, 4);
+		assert.equal(new Set(results.map((r) => r.details.path)).size, 4);
 	});
 });
 

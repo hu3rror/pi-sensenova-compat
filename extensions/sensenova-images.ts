@@ -176,11 +176,21 @@ function formatTimestamp(date) {
 
 async function saveImageFile(cwd, prompt, image, now, outputFormat, outputDir) {
 	const dir = isAbsolute(outputDir) ? outputDir : join(cwd, outputDir);
-	const fileName = `${formatTimestamp(now)}-${slugify(prompt)}.${outputFormat}`;
-	const filePath = join(dir, fileName);
 	await mkdir(dir, { recursive: true });
-	await writeFile(filePath, Buffer.from(image.data, "base64"));
-	return filePath;
+	const stem = `${formatTimestamp(now)}-${slugify(prompt)}`;
+	// Exclusive create ("wx") with a numeric suffix on EEXIST: the stem alone
+	// (ms timestamp + prompt slug) can collide for same-tick or same-prompt calls;
+	// "wx" also wins the race between concurrent writers instead of overwriting.
+	for (let attempt = 1; ; attempt++) {
+		const fileName = attempt === 1 ? `${stem}.${outputFormat}` : `${stem}-${attempt}.${outputFormat}`;
+		try {
+			const filePath = join(dir, fileName);
+			await writeFile(filePath, Buffer.from(image.data, "base64"), { flag: "wx" });
+			return filePath;
+		} catch (error) {
+			if (error?.code !== "EEXIST") throw error;
+		}
+	}
 }
 
 export async function readImageBlocks(imagePaths, cwd) {
