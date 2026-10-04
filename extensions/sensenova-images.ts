@@ -312,7 +312,7 @@ export function createGenerateImageTool(options = {}) {
 		name: "sensenova_generate_image",
 		label: "SenseNova Image Generator",
 		description:
-			"Generate or edit an image with the SenseNova U1.5 model and save it to a local file; returns the saved file path. Omit image_paths to generate an image from the prompt. To edit images, pass local file paths in image_paths (absolute, or relative to the working directory): the first image is the main edit target and up to 5 images are allowed; describe the desired result and what to keep unchanged in the prompt. Use model \"sensenova-u1.5-lite\" for higher quality or \"sensenova-u1.5-fast\" (default) for quicker results.",
+			"Generate or edit an image with the SenseNova U1.5 model and save it to a local file; returns the saved file path (plus the image block when the image_in_result setting is on). Omit image_paths to generate an image from the prompt. To edit images, pass local file paths in image_paths (absolute, or relative to the working directory): the first image is the main edit target and up to 5 images are allowed; describe the desired result and what to keep unchanged in the prompt. Use model \"sensenova-u1.5-lite\" for higher quality or \"sensenova-u1.5-fast\" (default) for quicker results.",
 		promptSnippet: "Generate or edit an image (SenseNova U1.5)",
 		parameters: {
 			type: "object",
@@ -369,7 +369,7 @@ export function createGenerateImageTool(options = {}) {
 					text: `Image ${imagePaths.length > 0 ? "edited" : "generated"} and saved to ${run.filePath}${configWarning}`,
 				},
 			];
-			if (run.imageInResult && run.imageData && run.imageMimeType) {
+			if (run.imageInResult) {
 				content.push({ type: "image", mimeType: run.imageMimeType, data: run.imageData });
 			}
 			return {
@@ -396,6 +396,12 @@ export function validateImageConfig(raw) {
 		config[key] = normalized.value;
 	}
 	return { ok: true, config };
+}
+
+function normalizeBoolean(key, value) {
+	if (typeof value === "boolean") return { ok: true, value };
+	if (value === "true" || value === "false") return { ok: true, value: value === "true" };
+	return { ok: false, error: `${key} must be true or false` };
 }
 
 function normalizeConfigValue(key, value) {
@@ -429,13 +435,9 @@ function normalizeConfigValue(key, value) {
 			}
 			return { ok: true, value };
 		case "watermark":
-			if (typeof value === "boolean") return { ok: true, value };
-			if (value === "true" || value === "false") return { ok: true, value: value === "true" };
-			return { ok: false, error: "watermark must be true or false" };
+			return normalizeBoolean("watermark", value);
 		case "image_in_result":
-			if (typeof value === "boolean") return { ok: true, value };
-			if (value === "true" || value === "false") return { ok: true, value: value === "true" };
-			return { ok: false, error: "image_in_result must be true or false" };
+			return normalizeBoolean("image_in_result", value);
 		case "output_dir":
 			if (typeof value !== "string" || value.trim().length === 0) {
 				return { ok: false, error: "output_dir must be a non-empty path" };
@@ -675,6 +677,7 @@ function completeSettingValue(key, prefix) {
 		size: ["auto", "1024x1024"],
 		output_format: OUTPUT_FORMATS,
 		watermark: ["true", "false"],
+		image_in_result: ["true", "false"],
 	}[key];
 	if (!values) return null;
 	const items = values
@@ -751,7 +754,7 @@ async function runImageGeneration(ctx, { prompt, imagePaths, explicitModel, conf
 export function createGenerateImageCommand(options = {}) {
 	return {
 		description:
-			'Generate or edit images with SenseNova U1.5: gen "a white seal" (text-to-image), edit @photo.png "make it winter" (image-to-image, up to 5 @-paths, first is the main edit target), or settings to view or change saved defaults (model, size, output_format, watermark, output_dir). --model sensenova-u1.5-lite gives higher quality for one call.',
+			'Generate or edit images with SenseNova U1.5: gen "a white seal" (text-to-image), edit @photo.png "make it winter" (image-to-image, up to 5 @-paths, first is the main edit target), or settings to view or change saved defaults (model, size, output_format, watermark, output_dir, image_in_result). --model sensenova-u1.5-lite gives higher quality for one call.',
 		getArgumentCompletions: (prefix) => completeImageCommand(prefix),
 		async handler(args, ctx) {
 			const parsed = parseImageCommand(args, ctx.cwd);

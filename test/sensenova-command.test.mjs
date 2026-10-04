@@ -427,6 +427,13 @@ test("completeImageCommand completes the reset action after settings", () => {
 	]);
 });
 
+test("completeImageCommand completes image_in_result values", () => {
+	const all = completeImageCommand("settings image_in_result ");
+	assert.deepEqual(all.map((i) => i.value), ["settings image_in_result true", "settings image_in_result false"]);
+	const filtered = completeImageCommand("settings image_in_result f");
+	assert.deepEqual(filtered.map((i) => i.value), ["settings image_in_result false"]);
+});
+
 test("completeImageCommand completes settings values", () => {
 	assert.deepEqual(completeImageCommand("settings model sensenova-u1.5-l").map((i) => i.value), [
 		"settings model sensenova-u1.5-lite",

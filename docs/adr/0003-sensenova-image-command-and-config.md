@@ -1,6 +1,6 @@
 # `/sensenova-image` 命令与用户级默认配置（命令配置层）
 
-决定：注册 `/sensenova-image` 命令作为用户直达生图通道，与 chat 工具 `sensenova_generate_image` **共享同一生成核心**；新增用户级配置文件 `<agent dir>/extensions/sensenova-compat.json`（`model` / `size` / `output_format` / `watermark` / `output_dir`），命令与工具共同读取；优先级 显式 flag（`--model`）> 命令配置 > 生图常量；命令结果**不写入 transcript**。
+决定：注册 `/sensenova-image` 命令作为用户直达生图通道，与 chat 工具 `sensenova_generate_image` **共享同一生成核心**；新增用户级配置文件 `<agent dir>/extensions/sensenova-compat.json`（`model` / `size` / `output_format` / `watermark` / `output_dir` / `image_in_result`），命令与工具共同读取；优先级 显式 flag（`--model`）> 命令配置 > 生图常量；命令结果**不写入 transcript**。
 
 ## 为什么需要命令与配置
 
