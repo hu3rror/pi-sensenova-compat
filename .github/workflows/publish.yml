@@ -1,7 +1,8 @@
-# npm 发布工作流(Trusted Publisher / OIDC,零 token)
-# 模式 A(暂存流,维护者 2FA 放行):CI 只 stage,approve 在维护者本地。
+# npm 发布工作流(Trusted Publisher / OIDC,零 token,直接流)
+# 直接流:push v* tag 即经 OIDC 直接 npm publish,全自动,无人工 2FA 闸门。
 # 前置:npmjs.com 已为包配置 Trusted Publisher,绑定本仓库 + 本 workflow 文件名
-# (publish.yml)。首发(v0.1.0)由维护者本地 npm publish,随后绑定 TP,此后再走本流。
+# (publish.yml),且其 Allowed actions 允许直接发布(npm publish)。
+# 首发(v0.1.0)由维护者本地 npm publish,随后绑定 TP,此后再走本流。
 name: publish
 
 on:
@@ -10,7 +11,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: read # 不建占位 Release(agent 手动 gh release create),无需 contents: write
   id-token: write # Trusted Publishing(OIDC)必需;同时自动生成 provenance
 
 jobs:
@@ -21,7 +22,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24 # npm stage 需 npm 11+(Node 24 自带)
+          node-version: 24 # 定制点:Node 24 LTS(npm publish 无 npm 11 门槛)
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
@@ -40,10 +41,7 @@ jobs:
             exit 1
           fi
 
-      # 模式 A:暂存(不直接发布;stage-id 在日志中,维护者本地 approve)
-      - name: Stage package on npm registry
-        run: npm stage publish --provenance
-
-      # 模式 B:直接发布(全自动)——本项目未采用,见 AGENTS.md 发布约定。
-      # - name: Publish to npm registry
-      #   run: npm publish --provenance
+      # 直接流:OIDC 自动认证并生成 provenance(trusted publishing 下无需
+      # --provenance 旗标,显式传入亦无冲突,官方示例即带该旗标)
+      - name: Publish to npm registry
+        run: npm publish --provenance

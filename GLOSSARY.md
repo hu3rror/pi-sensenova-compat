@@ -61,5 +61,5 @@ _Avoid_: 优先级（太泛）
 _Avoid_: @ 语法（口语可）
 
 **发布流**:
-push `v*` tag 触发 `.github/workflows/publish.yml`（Trusted Publisher / OIDC，零 token），暂存流——CI 只 `npm stage publish`，维护者本地 `npm stage approve <stage-id>`（需 2FA）真正发布；回滚 `npm stage reject`。首发（包尚未存在于 registry）由维护者本地 `npm publish` 后绑定 Trusted Publisher，CI 自下一版本启用。
-_Avoid_: 直接发布流（模式 B）、token 认证（误把 npm token 放进 CI）
+push `v*` tag 触发 `.github/workflows/publish.yml`（Trusted Publisher / OIDC，零 token），**直接流**——CI 经 OIDC 直接 `npm publish`，tag push 即发布，全自动无人工闸门；回滚 `npm unpublish <version>`（72 小时内，需本地登录态；超期 `npm deprecate`）。首发（包尚未存在于 registry）由维护者本地 `npm publish` 后绑定 Trusted Publisher，CI 自下一版本启用。
+_Avoid_: 暂存流（模式 A）、token 认证（误把 npm token 放进 CI）
